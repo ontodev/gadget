@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 from os import path
 
 here = path.abspath(path.dirname(__file__))
@@ -23,7 +23,6 @@ setup(
         "License :: OSI Approved :: BSD License",
     ],
     install_requires=install_requires,
-    packages="gadget",
-    package_dir={"": "src"},
+    packages=find_packages(),
     # entry_points={"console_scripts": ["gadget=gadget.run:main"]},
 )
