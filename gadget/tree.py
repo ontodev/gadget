@@ -5,19 +5,17 @@ from itertools import chain
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.sql.expression import text as sql_text
-from .helpers import (
+from .render import get_html_label, pre_render_objects, render_hiccup
+from .sql import (
     get_ancestor_hierarchy,
     get_descendant_hierarchy,
     get_entity_types,
-    get_html_label,
     get_iri,
     get_labels,
     get_objects,
-    pre_render_objects,
-    pre_render_to_hiccup,
     TOP_LEVELS,
 )
-from .styling import (
+from .style import (
     BOOTSTRAP_CSS,
     BOOTSTRAP_JS,
     get_tree_js,
@@ -56,7 +54,10 @@ def get_sorted_predicates(
 
 
 def parent2tree(treedata: dict, selected_term: str, selected_children: list, node: str):
-    cur_hierarchy = ["ul", ["li", tree_label(treedata, selected_term), selected_children]]
+    if selected_children:
+        cur_hierarchy = ["ul", ["li", tree_label(treedata, selected_term), selected_children]]
+    else:
+        cur_hierarchy = ["ul", ["li", tree_label(treedata, selected_term)]]
     if node in TOP_LEVELS:
         # Parent is top-level, nothing to add
         return cur_hierarchy
@@ -72,23 +73,30 @@ def parent2tree(treedata: dict, selected_term: str, selected_children: list, nod
             cur_hierarchy = ["ul", ["li", ["a", {"resource": node}, object_label], cur_hierarchy]]
             break
         # TODO: multiple parents?
-        parent = parents[0]
-        if node == parent:
-            # Parent is the same
-            cur_hierarchy = ["ul", ["li", ["a", {"resource": node}, object_label], cur_hierarchy]]
-            break
-        if parent in TOP_LEVELS:
-            href_ele = {"resource": node}
-        else:
-            href_ele = {
-                "about": parent,
-                "rev": "rdfs:subClassOf",
-                "resource": node,
-            }
-        cur_hierarchy = ["ul", ["li", ["a", href_ele, object_label], cur_hierarchy]]
-        node = parent
-        if node in TOP_LEVELS:
-            break
+        for parent in parents:
+            if parent == "owl:Thing":
+                parent = "owl:Class"
+            if node == parent:
+                # Parent is the same
+                cur_hierarchy = [
+                    "ul",
+                    ["li", ["a", {"resource": node}, object_label], cur_hierarchy],
+                ]
+                node = None
+                break
+            if parent in TOP_LEVELS:
+                href_ele = {"resource": node}
+            else:
+                href_ele = {
+                    "about": parent,
+                    "rev": "rdfs:subClassOf",
+                    "resource": node,
+                }
+            cur_hierarchy = ["ul", ["li", ["a", href_ele, object_label], cur_hierarchy]]
+            node = parent
+            if node in TOP_LEVELS:
+                node = None
+                break
     return cur_hierarchy
 
 
@@ -101,7 +109,14 @@ def term2rdfa(
     title: str = "Ontology Browser",
 ):
     descendants = get_descendant_hierarchy(conn, term_id, statement=statement)
+    import time
+
+    start = time.time()
     ancestors = get_ancestor_hierarchy(conn, term_id, statement=statement)
+    end = time.time()
+    import logging
+
+    logging.error(end - start)
 
     # Get the attributes (annotations, logic) of our term
     term_objects = get_objects(
@@ -112,10 +127,13 @@ def term2rdfa(
     # Add all the IDs of terms we care about
     term_ids.add(term_id)
     term_ids.update(predicate_ids)
-    term_ids.update(chain.from_iterable(ancestors))
+    term_ids.update(chain.from_iterable(ancestors.values()))
+    # Only add the direct children
+    term_ids.update(descendants.get(term_id, []))
+    term_ids = list(term_ids)
 
-    labels = get_labels(conn, list(term_ids), statement=statement)
-    entity_types = get_entity_types(conn, list(term_ids), statement=statement)
+    labels = get_labels(conn, term_ids, statement=statement)
+    entity_types = get_entity_types(conn, term_ids, statement=statement)
 
     # Get obsolete terms
     query = sql_text(
@@ -124,7 +142,7 @@ def term2rdfa(
           AND predicate = "owl:deprecated"
           AND LOWER(object) = "true";"""
     ).bindparams(bindparam("term_ids", expanding=True))
-    obsolete = [res["subject"] for res in conn.execute(query, term_ids=term_ids).fetchall()]
+    obsolete = [res["subject"] for res in conn.execute(query, term_ids=list(term_ids)).fetchall()]
 
     treedata = {
         "ancestors": ancestors,
@@ -186,7 +204,9 @@ def term2rdfa(
             term.append(["div", {"class": "row"}, ["a", {"href": ontology_iri}, ontology_iri]])
         term.append(["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree, items])
     else:
-        object_hiccup = pre_render_to_hiccup(pre_render, labels, entity_types)
+        object_hiccup = render_hiccup(
+            pre_render, labels, entity_types, include_annotations=True, single_item_list=True
+        )[term_id]
         attrs = ["ul", {"id": "annotations", "class": "col-md"}]
         for predicate, objs in object_hiccup.items():
             if predicate == "rdfs:label":
@@ -213,16 +233,20 @@ def term2tree(treedata: dict, term_id: str, max_children: int = 100):
     obsolete_children.sort(key=lambda x: treedata["labels"].get(x, x))
     children.extend(obsolete_children)
 
-    entity_type = treedata["entity_types"].get(term_id)
-    if entity_type == "owl:Class":
-        predicate = "rdfs:subClassOf"
-    elif entity_type == "owl:Individual":
+    entity_type = None
+    for et in treedata["entity_types"].get(term_id):
+        if et in TOP_LEVELS:
+            entity_type = et
+            break
+    if not entity_type or entity_type == "owl:Individual":
         predicate = "rdf:type"
+    elif entity_type == "owl:Class":
+        predicate = "rdfs:subClassOf"
     else:
         predicate = "rdfs:subPropertyOf"
 
     if len(children) == 0:
-        children_list = ""
+        children_list = []
     else:
         children_list = []
         for child in children:
@@ -418,13 +442,14 @@ def tree(
         html = ["html", head, body]
     else:
         html = body
+
     html = insert_href(html, href=href)
     return render(html)
 
 
 def tree_label(treedata: dict, s: str) -> list:
     """Retrieve the hiccup-style vector label of a term."""
-    label = treedata["labels"].get(s)
+    label = treedata["labels"].get(s, s)
     if s in treedata["obsolete"]:
         return ["s", label]
     return label
