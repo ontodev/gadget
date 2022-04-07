@@ -8,22 +8,23 @@ from typing import Dict, List
 
 MAX_SQL_VARS = os.environ.get("MAX_SQL_VARS") or 999
 TOP_LEVELS = {
-    "ontology": "Ontology",
+    "owl:Ontology": "Ontology",
     "owl:Class": "Class",
     "owl:AnnotationProperty": "Annotation Property",
-    "owl:DataProperty": "Data Property",
+    "owl:DatatypeProperty": "Data Property",
     "owl:ObjectProperty": "Object Property",
     "owl:Individual": "Individual",
     "rdfs:Datatype": "Datatype",
 }
 
 
-def get_ancestor_hierarchy(conn: Connection, term_id: str, statement="statement",) -> dict:
+def get_ancestor_hierarchy(conn: Connection, term_id: str, statement="statement", sub_class: bool = False) -> dict:
     """Return a dict of child -> list of parents for the full ancestor lineage of the given term.
 
     :param conn: database connection to query
     :param term_id: term to get ancestors of
     :param statement: name of the ontology statement table
+    :param sub_class: if True, substitute owl:Class for owl:Thing (support for tree view)
     :return: dict of child -> set of parents
     """
     query = sql_text(
@@ -58,9 +59,12 @@ def get_ancestor_hierarchy(conn: Connection, term_id: str, statement="statement"
     results = conn.execute(query, term_id=term_id).fetchall()
     ancestors = defaultdict(list)
     for res in results:
+        parent = res["parent"]
+        if parent == "owl:Thing":
+            parent = "owl:Class"
         if res["child"] not in ancestors:
             ancestors[res["child"]] = []
-        ancestors[res["child"]].append(res["parent"])
+        ancestors[res["child"]].append(parent)
     return ancestors
 
 
