@@ -234,10 +234,13 @@ def term2tree(treedata: dict, term_id: str, max_children: int = 100):
     children.extend(obsolete_children)
 
     entity_type = None
-    for et in treedata["entity_types"].get(term_id):
-        if et in TOP_LEVELS:
-            entity_type = et
-            break
+    if term_id in TOP_LEVELS and term_id != "ontology":
+        entity_type = term_id
+    else:
+        for et in treedata["entity_types"].get(term_id):
+            if et in TOP_LEVELS:
+                entity_type = et
+                break
     if not entity_type or entity_type == "owl:Individual":
         predicate = "rdf:type"
     elif entity_type == "owl:Class":
