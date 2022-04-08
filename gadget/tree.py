@@ -129,12 +129,21 @@ def get_top_hierarchy(conn: Connection, entity_type: str, statement: str = "stat
 
 
 def parent2tree(treedata: dict, selected_term: str, selected_children: list, node: str):
+    # Remap these parents to the top tree "parent", which is the entity type
+    if node == "owl:Thing":
+        node = "owl:Class"
+    elif node == "owl:topDataProperty":
+        node = "owl:DatatypeProperty"
+    elif node == "owl:topObjectProperty":
+        node = "owl:ObjectProperty"
+
+    # Create the current hierarchy list element
     if selected_children:
         cur_hierarchy = ["ul", ["li", tree_label(treedata, selected_term), selected_children]]
     else:
         cur_hierarchy = ["ul", ["li", tree_label(treedata, selected_term)]]
     if node in TOP_LEVELS:
-        # Parent is top-level, nothing to add
+        # Parent is top-level, nothing else to add
         return cur_hierarchy
 
     # Add parents to hierarhcy
@@ -148,13 +157,6 @@ def parent2tree(treedata: dict, selected_term: str, selected_children: list, nod
             cur_hierarchy = ["ul", ["li", ["a", {"resource": node}, object_label], cur_hierarchy]]
             break
         for parent in parents:
-            # Remap these parents to the top tree "parent", which is the entity type
-            if parent == "owl:Thing":
-                parent = "owl:Class"
-            elif parent == "owl:topDataProperty":
-                parent = "owl:DatatypeProperty"
-            elif parent == "owl:topObjectProperty":
-                parent = "owl:ObjectProperty"
             if node == parent:
                 # Parent is the same - prevent an infinite loop
                 cur_hierarchy = [
