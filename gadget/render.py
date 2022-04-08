@@ -45,10 +45,8 @@ def object2hiccup(
         ele = ["p"]
     dt = obj["datatype"]
     if dt.lower() == "_json":
-        # TODO: change to RDFa rendering here when ready (returns hiccup)
         typed = wiring_rs.ofn_typing(json.dumps(obj["object"]), entity_types)
-        labeled = wiring_rs.ofn_labeling(typed, labels)
-        ele.append(json.loads(wiring_rs.object_2_rdfa(labeled)))
+        ele.append(json.loads(wiring_rs.object_2_rdfa(typed, labels)))
     elif dt.lower() == "_iri":
         obj_label = get_html_label(obj["object"], labels, predicate=predicate)
         ele.append(obj_label)
