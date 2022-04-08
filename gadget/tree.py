@@ -147,12 +147,16 @@ def parent2tree(treedata: dict, selected_term: str, selected_children: list, nod
             # No parent
             cur_hierarchy = ["ul", ["li", ["a", {"resource": node}, object_label], cur_hierarchy]]
             break
-        # TODO: multiple parents?
         for parent in parents:
+            # Remap these parents to the top tree "parent", which is the entity type
             if parent == "owl:Thing":
                 parent = "owl:Class"
+            elif parent == "owl:topDataProperty":
+                parent = "owl:DatatypeProperty"
+            elif parent == "owl:topObjectProperty":
+                parent = "owl:ObjectProperty"
             if node == parent:
-                # Parent is the same
+                # Parent is the same - prevent an infinite loop
                 cur_hierarchy = [
                     "ul",
                     ["li", ["a", {"resource": node}, object_label], cur_hierarchy],
