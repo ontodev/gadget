@@ -192,9 +192,11 @@ def term2rdfa(
     # Get the prefixes for converting CURIEs to IRIs
     results = conn.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
     prefixes = {res["prefix"]: res["base"] for res in results}
+    bases = {v: k for k, v in prefixes.items()}
 
     descendants = {}
     ancestors = {}
+    ontology_title = None
     if term_id in TOP_LEVELS and term_id not in ["owl:Ontology", "owl:Individual", "rdfs:Datatype"]:
         descendants = get_top_hierarchy(conn, term_id, statement=statement)
     elif term_id == "owl:Individual":
@@ -204,10 +206,28 @@ def term2rdfa(
     elif term_id == "owl:Ontology":
         res = conn.execute(
             f"""SELECT subject FROM "{statement}"
-                                WHERE predicate = 'rdf:type' AND object = 'owl:Ontology'"""
+            WHERE predicate = 'rdf:type' AND object = 'owl:Ontology'"""
         ).fetchone()
         if res:
+            # Set the term ID to the ontology IRI
             term_id = res["subject"]
+            # Maybe get an ontology title from dce:title property
+            # People often use different prefixes for this, so check for what is used
+            dce_prefix = bases.get("http://purl.org/dc/elements/1.1/")
+            if dce_prefix:
+                title_predicate = dce_prefix + ":title"
+            else:
+                title_predicate = "<http://purl.org/dc/elements/1.1/title>"
+            res = conn.execute(
+                sql_text(
+                    f"""SELECT object FROM "{statement}"
+                    WHERE subject = :ontology AND predicate = :predicate"""
+                ),
+                ontology=term_id,
+                predicate=title_predicate,
+            ).fetchone()
+            if res:
+                ontology_title = res["object"]
     else:
         descendants = get_descendant_hierarchy(conn, term_id, statement=statement)
         ancestors = get_ancestor_hierarchy(conn, term_id, statement=statement, sub_class=True)
@@ -227,6 +247,9 @@ def term2rdfa(
     term_ids = list(term_ids)
 
     labels = get_labels(conn, term_ids, statement=statement)
+    if ontology_title:
+        # This is the owl:Ontology node and we have a title, which will be used as the "label"
+        labels[term_id] = ontology_title
     entity_types = get_entity_types(conn, term_ids, statement=statement)
 
     # Get obsolete terms
