@@ -477,7 +477,7 @@ def tree(
         pref_strs.append(f"{prefix}: {base}")
     pref_str = "\n".join(pref_strs)
 
-    body_wrapper = ["div", {"id": "gizmosTree", "prefix": pref_str}]
+    body_wrapper = ["div", {"id": "gadgetTree", "prefix": pref_str}]
     if include_search:
         body_wrapper.append(
             [
