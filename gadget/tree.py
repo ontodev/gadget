@@ -14,6 +14,9 @@ from .sql import (
     get_iri,
     get_labels,
     get_objects,
+    get_ontology_iri,
+    get_ontology_title,
+    get_prefixes,
     TOP_LEVELS,
 )
 from .style import (
@@ -70,7 +73,9 @@ def get_sorted_predicates(
     predicate_label_map = {res["subject"]: res["object"] or res["subject"] for res in results}
 
     # Return list of keys sorted by value (label)
-    sorted_predicates = [k for k, v in sorted(predicate_label_map.items(), key=lambda x: x[1].lower())]
+    sorted_predicates = [
+        k for k, v in sorted(predicate_label_map.items(), key=lambda x: x[1].lower())
+    ]
     if "dct:title" in sorted_predicates:
         # put ontology title at the start of list
         sorted_predicates.remove("dct:title")
@@ -187,12 +192,10 @@ def term2rdfa(
     predicate_ids: list,
     max_children: int = 100,
     statement: str = "statement",
-    title: str = "Ontology Browser",
+    title: str = None,
 ):
     # Get the prefixes for converting CURIEs to IRIs
-    results = conn.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-    prefixes = {res["prefix"]: res["base"] for res in results}
-    bases = {v: k for k, v in prefixes.items()}
+    prefixes = get_prefixes(conn)
 
     descendants = {}
     ancestors = {}
@@ -204,30 +207,8 @@ def term2rdfa(
     elif term_id == "rdfs:Datatype":
         pass
     elif term_id == "owl:Ontology":
-        res = conn.execute(
-            f"""SELECT subject FROM "{statement}"
-            WHERE predicate = 'rdf:type' AND object = 'owl:Ontology'"""
-        ).fetchone()
-        if res:
-            # Set the term ID to the ontology IRI
-            term_id = res["subject"]
-            # Maybe get an ontology title from dce:title property
-            # People often use different prefixes for this, so check for what is used
-            dce_prefix = bases.get("http://purl.org/dc/elements/1.1/")
-            if dce_prefix:
-                title_predicate = dce_prefix + ":title"
-            else:
-                title_predicate = "<http://purl.org/dc/elements/1.1/title>"
-            res = conn.execute(
-                sql_text(
-                    f"""SELECT object FROM "{statement}"
-                    WHERE subject = :ontology AND predicate = :predicate"""
-                ),
-                ontology=term_id,
-                predicate=title_predicate,
-            ).fetchone()
-            if res:
-                ontology_title = res["object"]
+        term_id = get_ontology_iri(conn, statement=statement)
+        ontology_title = get_ontology_title(conn, prefixes, term_id, statement=statement)
     else:
         descendants = get_descendant_hierarchy(conn, term_id, statement=statement)
         ancestors = get_ancestor_hierarchy(conn, term_id, statement=statement, sub_class=True)
@@ -271,7 +252,7 @@ def term2rdfa(
     rdfa_tree = term2tree(treedata, term_id, max_children=max_children)
 
     # Build the hiccup list for this term
-    if term_id in TOP_LEVELS and term_id != 'owl:Ontology':
+    if term_id in TOP_LEVELS and term_id != "owl:Ontology":
         items = [
             "ul",
             {"id": "annotations", "class": "col-md"},
@@ -297,34 +278,46 @@ def term2rdfa(
                 ".",
             ],
         ]
-        term = ["div", ["div", {"class": "row"}, ["h2", title]],
-                ["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree, items]]
+        if title:
+            term = [
+                "div",
+                ["div", {"class": "row"}, ["h2", title]],
+                ["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree, items],
+            ]
+        else:
+            term = [
+                "div",
+                ["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree, items],
+            ]
     else:
+        term_iri = get_iri(prefixes, term_id)
         if pre_render:
             object_hiccup = render_hiccup(
                 pre_render, labels, entity_types, include_annotations=True, single_item_list=True
             )[term_id]
-            attrs = ["ul", {"id": "annotations", "class": "col-md"}]
+            attrs = ["ul", {"id": "annotations", "style": "margin-left: -1rem;"}]
             for predicate, objs in object_hiccup.items():
                 if predicate == "rdfs:label":
                     # Label is already on the left side
                     continue
                 pred_label = get_html_label(predicate, labels)
                 attrs.append(["li", pred_label, objs])
-            term_iri = get_iri(prefixes, term_id)
+            attrs = [
+                "div",
+                {"class": "col-md"},
+                ["div", {"class": "row"}, ["h4", labels.get(term_id, term_id)]],
+                attrs,
+            ]
             term = [
                 "div",
                 {"resource": term_id},
-                ["div", {"class": "row"}, ["h2", labels.get(term_id, term_id)]],
                 ["div", {"class": "row"}, ["a", {"href": term_iri}, term_iri]],
                 ["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree, attrs],
             ]
         else:
-            term_iri = get_iri(prefixes, term_id)
             term = [
                 "div",
                 {"resource": term_id},
-                ["div", {"class": "row"}, ["h2", labels.get(term_id, term_id)]],
                 ["div", {"class": "row"}, ["a", {"href": term_iri}, term_iri]],
                 ["div", {"class": "row", "style": "padding-top: 10px;"}, rdfa_tree],
             ]
@@ -333,8 +326,12 @@ def term2rdfa(
 
 def term2tree(treedata: dict, term_id: str, max_children: int = 100):
     # Sort children based on label - obsolete last
-    children = [x for x in treedata["descendants"].get(term_id, []) if x not in treedata["obsolete"]]
-    obsolete_children = [x for x in treedata["descendants"].get(term_id, []) if x in treedata["obsolete"]]
+    children = [
+        x for x in treedata["descendants"].get(term_id, []) if x not in treedata["obsolete"]
+    ]
+    obsolete_children = [
+        x for x in treedata["descendants"].get(term_id, []) if x in treedata["obsolete"]
+    ]
     children.sort(key=lambda x: treedata["labels"].get(x, x))
     obsolete_children.sort(key=lambda x: treedata["labels"].get(x, x))
     children.extend(obsolete_children)
@@ -423,7 +420,7 @@ def tree(
     predicate_ids: list = None,
     standalone: bool = True,
     statement: str = "statement",
-    title: str = "Ontology Browser",
+    title: str = None,
 ) -> str:
     body = []
     if not term_id:
@@ -550,9 +547,10 @@ def tree(
             ],
             ["link", {"rel": "stylesheet", "href": BOOTSTRAP_CSS, "crossorigin": "anonymous"}],
             ["link", {"rel": "stylesheet", "href": "../style.css"}],
-            ["title", title],
-            ["style", TREE_CSS],
         ]
+        if title:
+            head.append(["title", title])
+        head.append(["style", TREE_CSS])
         body = ["body", {"class": "container"}, body]
         html = ["html", head, body]
     else:

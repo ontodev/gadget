@@ -18,7 +18,9 @@ TOP_LEVELS = {
 }
 
 
-def get_ancestor_hierarchy(conn: Connection, term_id: str, statement="statement", sub_class: bool = False) -> dict:
+def get_ancestor_hierarchy(
+    conn: Connection, term_id: str, statement="statement", sub_class: bool = False
+) -> dict:
     """Return a dict of child -> list of parents for the full ancestor lineage of the given term.
 
     :param conn: database connection to query
@@ -181,45 +183,6 @@ def get_entity_types(
     return entity_types
 
 
-def get_top_entity_type(conn: Connection, term_id: str, statements="statements") -> str:
-    """Get a single OWL entity type for a term. This will not include the types of named inviduals,
-    rather a named individual will have the type owl:Individual."""
-    query = sql_text(
-        f"SELECT object FROM \"{statements}\" WHERE subject = :term_id AND predicate = 'rdf:type'"
-    )
-    results = list(conn.execute(query, term_id=term_id))
-    if len(results) > 1:
-        for res in results:
-            if res["object"] in TOP_LEVELS:
-                return res["object"]
-        return "owl:Individual"
-    elif len(results) == 1:
-        entity_type = results[0]["object"]
-        if entity_type == "owl:NamedIndividual":
-            entity_type = "owl:Individual"
-        return entity_type
-    else:
-        # Check if this is used as a subClass or subProperty
-        entity_type = None
-        query = sql_text(f'SELECT predicate FROM "{statements}" WHERE subject = :term_id')
-        results = conn.execute(query, term_id=term_id)
-        preds = [row["predicate"] for row in results]
-        if "rdfs:subClassOf" in preds:
-            return "owl:Class"
-        elif "rdfs:subPropertyOf" in preds:
-            return "owl:AnnotationProperty"
-        if not entity_type:
-            # Check if this is used as a parent property or parent class
-            query = sql_text(f"SELECT predicate FROM {statements} WHERE object = :term_id")
-            results = conn.execute(query, term_id=term_id)
-            preds = [row["predicate"] for row in results]
-            if "rdfs:subClassOf" in preds:
-                return "owl:Class"
-            elif "rdfs:subPropertyOf" in preds:
-                return "owl:AnnotationProperty"
-    return "owl:Class"
-
-
 def get_ids(
     conn: Connection,
     id_or_labels: List[str] = None,
@@ -249,50 +212,26 @@ def get_ids(
         return [res["predicate"] for res in results]
 
 
-def get_term_attributes(
-    conn: Connection,
-    exclude_json: bool = False,
-    include_all_predicates: bool = True,
-    predicates: List[str] = None,
-    statement: str = "statement",
-    term_ids: List[str] = None,
-) -> dict:
-    """Retrieve all attributes for given terms from the SQL database. If no terms are provided,
-    return details for all terms in database. This is returned as a dictionary of predicate ID ->
-    list of object dictionaries (object, datatype, annotation).
+def get_labels(conn: Connection, term_ids: list, statement="statement") -> Dict[str, str]:
+    """Return a dictionary of term ID -> label.
 
-    :param conn: SQLAlchemy database connection
-    :param exclude_json: if True, do not include objects with the _JSON datatype (anonymous)
-    :param include_all_predicates: if True, include predicates in the return dicts even if they
-                                   have no values for a given term.
-    :param predicates: list of properties to include in export
-    :param statement: name of the ontology statements table
-    :param term_ids: list of terms to export (by ID or label)
-    :return: string export in given format
+    :param conn: database connection to query
+    :param term_ids: list of term IDs to get labels for
+    :param statement: name of ontology statement table
+    :return:
     """
-    if term_ids:
-        # Use list of terms (IDs or labels) to get a list of term IDs
-        term_ids = get_ids(conn, id_or_labels=term_ids, statement=statement)
-    else:
-        # No term IDs, we will return details for all subjects in the database
-        term_ids = None
-
-    predicate_ids = get_ids(conn, id_or_labels=predicates, id_type="predicate", statement=statement)
-
-    # Get prefixes
-    prefixes = {}
-    for row in conn.execute(f"SELECT DISTINCT prefix, base FROM prefix"):
-        prefixes[row["prefix"]] = row["base"]
-
-    # Get the term details
-    return get_objects(
-        conn,
-        predicate_ids,
-        exclude_json=exclude_json,
-        include_all_predicates=include_all_predicates,
-        statement=statement,
-        term_ids=term_ids,
-    )
+    labels = {}
+    # Use chunks to get around max SQL variables
+    chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+    for chunk in chunks:
+        query = sql_text(
+            f"""SELECT subject, object FROM "{statement}"
+                WHERE subject IN :ids AND predicate = 'rdfs:label' AND object IS NOT NULL"""
+        ).bindparams(bindparam("ids", expanding=True))
+        results = conn.execute(query, {"ids": chunk})
+        for res in results:
+            labels[res["subject"]] = res["object"]
+    return labels
 
 
 def get_objects(
@@ -364,6 +303,45 @@ def get_objects(
     return term_objects
 
 
+def get_ontology_iri(conn, statement="statement"):
+    res = conn.execute(
+        f"""SELECT subject FROM "{statement}"
+                WHERE predicate = 'rdf:type' AND object = 'owl:Ontology'"""
+    ).fetchone()
+    if res:
+        return res["subject"]
+    return None
+
+
+def get_ontology_title(
+    conn: Connection, prefixes: dict, term_id: str, statement: str = "statement"
+):
+    # Maybe get an ontology title from dce:title property
+    # People often use different prefixes for this, so check for what is used
+    bases = {v: k for k, v in prefixes.items()}
+    dce_prefix = bases.get("http://purl.org/dc/elements/1.1/")
+    if dce_prefix:
+        title_predicate = dce_prefix + ":title"
+    else:
+        title_predicate = "<http://purl.org/dc/elements/1.1/title>"
+    res = conn.execute(
+        sql_text(
+            f"""SELECT object FROM "{statement}"
+            WHERE subject = :ontology AND predicate = :predicate"""
+        ),
+        ontology=term_id,
+        predicate=title_predicate,
+    ).fetchone()
+    if res:
+        return res["object"]
+    return None
+
+
+def get_prefixes(conn: Connection) -> dict:
+    results = conn.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
+    return {res["prefix"]: res["base"] for res in results}
+
+
 def get_iri(prefixes: dict, term_id: str) -> str:
     """Get the IRI from a CURIE.
 
@@ -381,23 +359,79 @@ def get_iri(prefixes: dict, term_id: str) -> str:
     return namespace + local_id
 
 
-def get_labels(conn: Connection, term_ids: list, statement="statement") -> Dict[str, str]:
-    """Return a dictionary of term ID -> label.
+def get_term_attributes(
+    conn: Connection,
+    exclude_json: bool = False,
+    include_all_predicates: bool = True,
+    predicates: List[str] = None,
+    statement: str = "statement",
+    term_ids: List[str] = None,
+) -> dict:
+    """Retrieve all attributes for given terms from the SQL database. If no terms are provided,
+    return details for all terms in database. This is returned as a dictionary of predicate ID ->
+    list of object dictionaries (object, datatype, annotation).
 
-    :param conn: database connection to query
-    :param term_ids: list of term IDs to get labels for
-    :param statement: name of ontology statement table
-    :return:
+    :param conn: SQLAlchemy database connection
+    :param exclude_json: if True, do not include objects with the _JSON datatype (anonymous)
+    :param include_all_predicates: if True, include predicates in the return dicts even if they
+                                   have no values for a given term.
+    :param predicates: list of properties to include in export
+    :param statement: name of the ontology statements table
+    :param term_ids: list of terms to export (by ID or label)
+    :return: string export in given format
     """
-    labels = {}
-    # Use chunks to get around max SQL variables
-    chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
-    for chunk in chunks:
-        query = sql_text(
-            f"""SELECT subject, object FROM "{statement}"
-                WHERE subject IN :ids AND predicate = 'rdfs:label' AND object IS NOT NULL"""
-        ).bindparams(bindparam("ids", expanding=True))
-        results = conn.execute(query, {"ids": chunk})
+    predicate_ids = get_ids(conn, id_or_labels=predicates, id_type="predicate", statement=statement)
+
+    # Get prefixes
+    prefixes = {}
+    for row in conn.execute(f"SELECT DISTINCT prefix, base FROM prefix"):
+        prefixes[row["prefix"]] = row["base"]
+
+    # Get the term details
+    return get_objects(
+        conn,
+        predicate_ids,
+        exclude_json=exclude_json,
+        include_all_predicates=include_all_predicates,
+        statement=statement,
+        term_ids=term_ids,
+    )
+
+
+def get_top_entity_type(conn: Connection, term_id: str, statements="statements") -> str:
+    """Get a single OWL entity type for a term. This will not include the types of named inviduals,
+    rather a named individual will have the type owl:Individual."""
+    query = sql_text(
+        f"SELECT object FROM \"{statements}\" WHERE subject = :term_id AND predicate = 'rdf:type'"
+    )
+    results = list(conn.execute(query, term_id=term_id))
+    if len(results) > 1:
         for res in results:
-            labels[res["subject"]] = res["object"]
-    return labels
+            if res["object"] in TOP_LEVELS:
+                return res["object"]
+        return "owl:Individual"
+    elif len(results) == 1:
+        entity_type = results[0]["object"]
+        if entity_type == "owl:NamedIndividual":
+            entity_type = "owl:Individual"
+        return entity_type
+    else:
+        # Check if this is used as a subClass or subProperty
+        entity_type = None
+        query = sql_text(f'SELECT predicate FROM "{statements}" WHERE subject = :term_id')
+        results = conn.execute(query, term_id=term_id)
+        preds = [row["predicate"] for row in results]
+        if "rdfs:subClassOf" in preds:
+            return "owl:Class"
+        elif "rdfs:subPropertyOf" in preds:
+            return "owl:AnnotationProperty"
+        if not entity_type:
+            # Check if this is used as a parent property or parent class
+            query = sql_text(f"SELECT predicate FROM {statements} WHERE object = :term_id")
+            results = conn.execute(query, term_id=term_id)
+            preds = [row["predicate"] for row in results]
+            if "rdfs:subClassOf" in preds:
+                return "owl:Class"
+            elif "rdfs:subPropertyOf" in preds:
+                return "owl:AnnotationProperty"
+    return "owl:Class"
