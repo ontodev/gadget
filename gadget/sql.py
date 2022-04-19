@@ -1,10 +1,11 @@
 import os
+import logging
 
 from collections import defaultdict
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.sql.expression import text as sql_text
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 MAX_SQL_VARS = os.environ.get("MAX_SQL_VARS") or 999
 TOP_LEVELS = {
@@ -269,28 +270,28 @@ def get_objects(
             for p in predicate_ids:
                 term_objects[term_id][p] = list()
 
+    # Build a query
+    query = f"""SELECT DISTINCT subject, predicate, object, datatype, annotation
+                FROM "{statement}" WHERE predicate IN :predicates"""
+    if term_ids:
+        query += " AND subject IN :terms"
+
+    # Add params for any where statements using user input values
+    const_dict = {"predicates": predicate_ids}
+    if exclude_json:
+        query += " AND datatype IS NOT '_JSON'"
+    query = sql_text(query).bindparams(bindparam("predicates", expanding=True))
+
     results = []
     if term_ids:
         # Use chunks to get around max SQL variables
         chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
         for chunk in chunks:
-            query = f"""SELECT DISTINCT subject, predicate, object, datatype, annotation
-                    FROM "{statement}" WHERE subject IN :terms AND predicate IN :predicates"""
-            if exclude_json:
-                query += " AND datatype IS NOT '_JSON'"
-            query = sql_text(query).bindparams(
-                bindparam("terms", expanding=True), bindparam("predicates", expanding=True)
-            )
-            results.extend(
-                conn.execute(query, {"terms": chunk, "predicates": predicate_ids}).fetchall()
-            )
+            const_dict["terms"] = chunk
+            query = query.bindparams(bindparam("terms", expanding=True))
+            results.extend(conn.execute(query, const_dict).fetchall())
     else:
-        query = f"""SELECT DISTINCT subject, predicate, object, datatype, annotation
-                FROM "{statement}" WHERE predicate IN :predicates"""
-        if exclude_json:
-            query += " AND datatype IS NOT '_JSON'"
-        query = sql_text(query).bindparams(bindparam("predicates", expanding=True))
-        results.extend(conn.execute(query, {"predicates": predicate_ids}).fetchall())
+        results.extend(conn.execute(query, const_dict).fetchall())
 
     for res in results:
         s = res["subject"]
