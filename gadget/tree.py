@@ -210,8 +210,8 @@ def term2rdfa(
         term_id = get_ontology_iri(conn, statement=statement)
         ontology_title = get_ontology_title(conn, prefixes, term_id, statement=statement)
     else:
-        descendants = get_descendant_hierarchy(conn, term_id, statement=statement)
-        ancestors = get_ancestor_hierarchy(conn, term_id, statement=statement, sub_class=True)
+        descendants = get_descendant_hierarchy(conn, [term_id], statement=statement)
+        ancestors = get_ancestor_hierarchy(conn, [term_id], statement=statement)
 
     # Get the attributes (annotations, logic) of our term
     term_objects = get_objects(

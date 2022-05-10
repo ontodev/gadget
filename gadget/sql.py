@@ -1,11 +1,11 @@
 import os
-import logging
+import re
 
 from collections import defaultdict
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.sql.expression import text as sql_text
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 MAX_SQL_VARS = os.environ.get("MAX_SQL_VARS") or 999
 TOP_LEVELS = {
@@ -19,34 +19,54 @@ TOP_LEVELS = {
 }
 
 
-def get_ancestor_hierarchy(
-    conn: Connection, term_id: str, statement="statement", sub_class: bool = False
-) -> dict:
-    """Return a dict of child -> list of parents for the full ancestor lineage of the given term.
+def escape(curie) -> str:
+    """Escape illegal characters in the local ID portion of a CURIE"""
+    prefix = curie.split(":")[0]
+    local_id = curie.split(":")[1]
+    local_id_fixed = re.sub(r"(?<!\\)([~!$&'()*+,;=/?#@%])", r"\\\1", local_id)
+    return f"{prefix}:{local_id_fixed}"
+
+
+def escape_qnames(conn: Connection, table: str):
+    """Update CURIEs with illegal QName characters in the local ID by escaping those characters."""
+    for keyword in ["subject", "predicate", "object"]:
+        query = f"SELECT DISTINCT {keyword} FROM \"{table}\" WHERE {keyword} NOT LIKE '<%%>'"
+        if keyword == "object":
+            query += " AND datatype = '_IRI'"
+        results = conn.execute(query)
+        for res in results:
+            curie = res[keyword]
+            escaped = escape(curie)
+            if curie != escaped:
+                query = sql_text(
+                    f"UPDATE {table} SET {keyword} = :escaped WHERE {keyword} = :curie"
+                )
+                conn.execute(query, escaped=escaped, curie=curie)
+
+
+def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statement") -> dict:
+    """Return a dict of child -> list of parents for the full ancestor lineage of the given terms.
 
     :param conn: database connection to query
-    :param term_id: term to get ancestors of
+    :param term_ids: terms to get ancestors of
     :param statement: name of the ontology statement table
-    :param sub_class: if True, substitute owl:Class for owl:Thing (support for tree view)
     :return: dict of child -> set of parents
     """
-    query = sql_text(
-        f"""WITH RECURSIVE ancestors(parent, child) AS (
-        VALUES (:term_id, NULL)
-        UNION
-        -- The children of the given term:
+    values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
+    query = "WITH RECURSIVE ancestors(parent, child) AS (VALUES " + values + f""" UNION
+        -- The parent of the given terms:
         SELECT object AS parent, subject AS child
         FROM "{statement}"
         WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-          AND object = :term_id
+          AND object IN :term_ids
           AND datatype = '_IRI'
         UNION
-        --- Children of the children of the given term
+        --- Parents of the parents of the given terms
         SELECT object AS parent, subject AS child
         FROM "{statement}"
         WHERE object IN (SELECT subject FROM "{statement}"
                          WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-                         AND object = :term_id)
+                         AND object IN :term_ids)
           AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
           AND datatype = '_IRI'
         UNION
@@ -58,8 +78,8 @@ def get_ancestor_hierarchy(
           AND "{statement}".datatype = '_IRI'
       )
       SELECT * FROM ancestors"""
-    )
-    results = conn.execute(query, term_id=term_id).fetchall()
+    query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
+    results = conn.execute(query, term_ids=term_ids).fetchall()
     ancestors = defaultdict(list)
     for res in results:
         parent = res["parent"]
@@ -80,24 +100,28 @@ def get_children(conn: Connection, term_id: str, statement: str = "statement"):
     return [x["subject"] for x in results]
 
 
-def get_descendant_hierarchy(conn: Connection, term_id: str, statement: str = "statement"):
-    query = sql_text(
-        f"""WITH RECURSIVE descendants(child, parent) AS (
-            VALUES (:term_id, NULL)
-            UNION
-            -- The children of the given term:
+def get_descendant_hierarchy(conn: Connection, term_ids: list, statement: str = "statement") -> dict:
+    """Get the descendant hierarchies as a dict of parent -> list of children for a list of terms.
+
+    :param conn: database connection
+    :param term_ids: list of terms to get descendants of
+    :param statement: name of ontology statement table
+    :return dict of parent -> list of children"""
+    values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
+    query = "WITH RECURSIVE descendants(child, parent) AS (VALUES " + values + f""" UNION
+            -- The children of the given terms:
             SELECT subject AS child, object AS parent
             FROM "{statement}"
             WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-              AND object = :term_id
+              AND object IN :term_ids
               AND datatype = '_IRI'
             UNION
-            --- Children of the children of the given term
+            --- Children of the children of the given terms
             SELECT subject AS child, object AS parent
             FROM "{statement}"
             WHERE object IN (SELECT subject FROM "{statement}"
                              WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-                             AND object = :term_id)
+                             AND object IN :term_ids)
               AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
               AND datatype = '_IRI'
             UNION
@@ -109,8 +133,8 @@ def get_descendant_hierarchy(conn: Connection, term_id: str, statement: str = "s
               AND "{statement}".datatype = '_IRI'
           )
           SELECT * FROM descendants"""
-    )
-    results = conn.execute(query, term_id=term_id)
+    query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
+    results = conn.execute(query, term_ids=term_ids)
     descendants = defaultdict(list)
     for res in results:
         if res["parent"] not in descendants:
@@ -120,22 +144,26 @@ def get_descendant_hierarchy(conn: Connection, term_id: str, statement: str = "s
 
 
 def get_descendants(conn: Connection, term_id: str, statement: str = "statements") -> list:
-    """Return a set of descendants (in no order) for a given term ID."""
+    """Return a set of descendants (in no order) for a given term ID.
+
+    :param conn: database connection
+    :param term_id: term to get descendants of
+    :param statement: name of ontology statement table"""
     query = sql_text(
         f"""WITH RECURSIVE descendants(node) AS (
-                VALUES (:term_id)
-                UNION
-                 SELECT subject AS node
-                FROM "{statement}"
-                WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-                  AND subject = :term_id
-                UNION
-                SELECT subject AS node
-                FROM "{statement}", descendants
-                WHERE descendants.node = "{statement}".object
-                  AND "{statement}".predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-            )
-            SELECT * FROM descendants"""
+            VALUES (:term_id)
+            UNION
+             SELECT subject AS node
+            FROM "{statement}"
+            WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+              AND subject = :term_id
+            UNION
+            SELECT subject AS node
+            FROM "{statement}", descendants
+            WHERE descendants.node = "{statement}".object
+              AND "{statement}".predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+        )
+        SELECT * FROM descendants"""
     )
     results = conn.execute(query, target=term_id)
     return [x["node"] for x in results]
@@ -338,6 +366,18 @@ def get_ontology_title(
     return None
 
 
+def get_parents(conn: Connection, term_id: str, statement: str = "statement") -> set:
+    """Return a set of parents for a given term ID."""
+    query = sql_text(
+        f"""SELECT DISTINCT object FROM "{statement}"
+            WHERE subject = :term_id
+             AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+             AND datatype IS NOT '_JSON'"""
+    )
+    results = conn.execute(query, term_id=term_id)
+    return set([x["object"] for x in results])
+
+
 def get_prefixes(conn: Connection) -> dict:
     results = conn.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
     return {res["prefix"]: res["base"] for res in results}
@@ -358,45 +398,6 @@ def get_iri(prefixes: dict, term_id: str) -> str:
         raise ValueError(f"Prefix '{prefix}' is not defined in prefix table")
     local_id = term_id.split(":")[1]
     return namespace + local_id
-
-
-def get_term_attributes(
-    conn: Connection,
-    exclude_json: bool = False,
-    include_all_predicates: bool = True,
-    predicates: List[str] = None,
-    statement: str = "statement",
-    term_ids: List[str] = None,
-) -> dict:
-    """Retrieve all attributes for given terms from the SQL database. If no terms are provided,
-    return details for all terms in database. This is returned as a dictionary of predicate ID ->
-    list of object dictionaries (object, datatype, annotation).
-
-    :param conn: SQLAlchemy database connection
-    :param exclude_json: if True, do not include objects with the _JSON datatype (anonymous)
-    :param include_all_predicates: if True, include predicates in the return dicts even if they
-                                   have no values for a given term.
-    :param predicates: list of properties to include in export
-    :param statement: name of the ontology statements table
-    :param term_ids: list of terms to export (by ID or label)
-    :return: string export in given format
-    """
-    predicate_ids = get_ids(conn, id_or_labels=predicates, id_type="predicate", statement=statement)
-
-    # Get prefixes
-    prefixes = {}
-    for row in conn.execute(f"SELECT DISTINCT prefix, base FROM prefix"):
-        prefixes[row["prefix"]] = row["base"]
-
-    # Get the term details
-    return get_objects(
-        conn,
-        predicate_ids,
-        exclude_json=exclude_json,
-        include_all_predicates=include_all_predicates,
-        statement=statement,
-        term_ids=term_ids,
-    )
 
 
 def get_top_entity_type(conn: Connection, term_id: str, statements="statements") -> str:
