@@ -57,7 +57,7 @@ def object2hiccup(
             dt_display = ["a", {"resource": dt}, dt]
         ele.append(obj["object"])
         ele.append(["sup", {"class": "text-black-50"}, dt_display])
-    if obj["annotation"] and include_annotations:
+    if obj.get("annotation") and include_annotations:
         ann_ele = ["ul"]
         for ann_predicate, ann_objects in obj["annotation"].items():
             pred_ele = ["ul"]
@@ -111,7 +111,7 @@ def pre_render_objects(data: dict) -> Tuple[dict, set]:
             object_ids.add(predicate)
             pre_render_po = []
             for obj in objs:
-                annotation = obj["annotation"]
+                annotation = obj.get("annotation")
                 pre_render_annotation = defaultdict(list)
                 if annotation:
                     # TODO: do we need to support more levels of annotations?
