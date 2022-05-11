@@ -1,0 +1,21 @@
+1	0	graph	OBI:0302729	rdfs:label	chemical solution	@en	
+1	0	graph	OBI:0302729	rdfs:subClassOf	BFO:0000040	_IRI	
+1	0	graph	OBI:0302729	rdf:type	owl:Class	_IRI	
+1	0	graph	OBI:0100046	rdfs:label	phosphate buffered saline solution	@en	
+1	0	graph	OBI:0100046	rdfs:subClassOf	OBI:0302729	_IRI	
+1	0	graph	OBI:0100046	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000004	rdfs:label	independent continuant	@en	
+1	0	graph	BFO:0000004	rdfs:subClassOf	BFO:0000002	_IRI	
+1	0	graph	BFO:0000004	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000004	BFO:0000179	ic	xsd:string	
+1	0	graph	BFO:0000002	rdfs:label	continuant	@en	
+1	0	graph	BFO:0000002	rdfs:subClassOf	BFO:0000001	_IRI	
+1	0	graph	BFO:0000002	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000002	BFO:0000179	continuant	xsd:string	
+1	0	graph	BFO:0000001	rdfs:label	entity	@en	
+1	0	graph	BFO:0000001	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000001	BFO:0000179	entity	xsd:string	
+1	0	graph	BFO:0000040	rdfs:label	material entity	@en	
+1	0	graph	BFO:0000040	rdfs:subClassOf	BFO:0000004	_IRI	
+1	0	graph	BFO:0000040	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000040	BFO:0000179	material	xsd:string	

@@ -1,0 +1,5 @@
+1	0	graph	OBI:0100046	rdfs:label	phosphate buffered saline solution	@en	
+1	0	graph	OBI:0100046	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000040	rdfs:label	material entity	@en	
+1	0	graph	BFO:0000040	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000040	BFO:0000179	material	xsd:string	

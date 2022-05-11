@@ -255,7 +255,9 @@ def create_tables(
         assign_parents.append(term_id)
 
     # We get the hierarchy for all these terms at the same time to save time
-    hierarchy = get_ancestor_hierarchy(conn, assign_parents, statement=statement)
+    hierarchy = {}
+    if assign_parents:
+        hierarchy = get_ancestor_hierarchy(conn, assign_parents, statement=statement)
 
     # Add subclass/subproperty/type relationships to terms table
     for term_id, details in terms.items():
@@ -411,9 +413,6 @@ def extract(
     intermediates = intermediates.lower()
     if intermediates not in ["all", "none"]:
         raise Exception("Unknown 'intermediates' option: " + intermediates)
-
-    # Pre-clean up
-    clean(conn, extract_table=extract_table)
 
     # Maybe get the related entities from the import file
     # ... these are extra terms to add to the extracted module
@@ -641,15 +640,16 @@ def get_top_ancestors(
     parents = hierarchy.get(term_id)
     if not parents:
         top_ancestors.add(term_id)
-    for p in parents:
-        if p == "owl:Thing":
-            top_ancestors.add(term_id)
-        elif p in top_terms:
-            top_ancestors.add(p)
-        else:
-            top_ancestors.update(
-                get_top_ancestors(hierarchy, p, top_ancestors=top_ancestors, top_terms=top_terms)
-            )
+    else:
+        for p in parents:
+            if p == "owl:Thing":
+                top_ancestors.add(term_id)
+            elif p in top_terms:
+                top_ancestors.add(p)
+            else:
+                top_ancestors.update(
+                    get_top_ancestors(hierarchy, p, top_ancestors=top_ancestors, top_terms=top_terms)
+                )
     return top_ancestors
 
 

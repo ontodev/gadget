@@ -1,0 +1,8 @@
+1	0	graph	OBI:0000666	rdfs:label	background correction data transformation	@en	
+1	0	graph	OBI:0000666	rdfs:subClassOf	BFO:0000001	_IRI	
+1	0	graph	OBI:0000666	rdf:type	owl:Class	_IRI	
+1	0	graph	OBI:0100046	rdfs:label	phosphate buffered saline solution	@en	
+1	0	graph	OBI:0100046	rdfs:subClassOf	BFO:0000001	_IRI	
+1	0	graph	OBI:0100046	rdf:type	owl:Class	_IRI	
+1	0	graph	BFO:0000001	rdfs:label	entity	@en	
+1	0	graph	BFO:0000001	rdf:type	owl:Class	_IRI	
