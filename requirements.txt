@@ -1,2 +1,5 @@
+flake8
 hiccupy==1.0.0
+pytest
 SQLAlchemy
+tabulate

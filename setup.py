@@ -22,7 +22,6 @@ setup(
         "Operating System :: OS Independent",
         "License :: OSI Approved :: BSD License",
     ],
-    test_requires=["pytest", "tabulate"],
     install_requires=install_requires,
     packages=find_packages(),
     # entry_points={"console_scripts": ["gadget=gadget.run:main"]},
