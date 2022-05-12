@@ -13,6 +13,7 @@ from .sql import (
     get_descendant_hierarchy,
     get_ids,
     get_parents,
+    validate_table,
 )
 
 """
@@ -57,6 +58,12 @@ def main():
     p.add_argument("-t", "--term", action="append", help="CURIE or label of term to extract")
     p.add_argument(
         "-T", "--terms", help="File containing CURIES or labels of terms to extract",
+    )
+    p.add_argument(
+        "-r",
+        "--related",
+        help="type of related terms of input terms to include (default: ancestors)",
+        default="ancestors",
     )
     p.add_argument(
         "-p", "--predicate", action="append", help="CURIE or label of predicate to include",
@@ -117,7 +124,7 @@ def run_extract(args: Namespace):
 
     for t in terms_list:
         if not args.no_hierarchy:
-            terms[t] = {"Related": "ancestors"}
+            terms[t] = {"Related": args.related}
         else:
             terms[t] = {}
 
@@ -153,8 +160,11 @@ def run_extract(args: Namespace):
             logging.critical(f"Source '{source}' does not exist in config file: " + config_path)
             sys.exit(1)
 
-    # Get the database connection & extract terms to new table
+    # Get the database connection
     conn = get_connection(args.database)
+    # Validate that the table exists before we get started
+    validate_table(conn, args.statement)
+    # Create new extract table
     extract(
         conn,
         args.extract_table,
@@ -274,7 +284,9 @@ def create_tables(
         # Otherwise only add the parent if we want a hierarchy
         # Check for the first ancestor we can find with all terms considered "top level"
         # In many cases, this is just the direct parent
-        parents = get_top_ancestors(hierarchy, term_id, top_terms=list(terms.keys()))
+        parents = get_top_ancestors(
+            hierarchy, term_id, remove_redundancy=True, top_terms=list(terms.keys())
+        )
         parents = parents.intersection(set(terms.keys()))
         if parents:
             # Maintain these relationships in the import module
@@ -489,10 +501,7 @@ def get_bottom_descendants(hierarchy: dict, term_id: str, descendants: set = Non
 
 
 def get_hierarchy_capped(
-    full_hierarchy: dict,
-    top_terms: set,
-    term_id: str,
-    capped_hierarchy: set = None,
+    full_hierarchy: dict, top_terms: set, term_id: str, capped_hierarchy: set = None,
 ) -> set:
     """Get a set of all ancestors, in order, up to the top terms. If a lineage does not contain a
     top term, it will go all the way to the top ancestor (no asserted parent).
@@ -547,7 +556,9 @@ def get_import_terms(import_file: str, source: str = None) -> dict:
     return terms
 
 
-def get_related_entities(conn: Connection, terms: dict, intermediates: str = "all", statement: str = "statement") -> set:
+def get_related_entities(
+    conn: Connection, terms: dict, intermediates: str = "all", statement: str = "statement"
+) -> set:
     """Get the related entities for the input terms that have 'Related' entries.
 
     :param conn: database connection
@@ -593,8 +604,12 @@ def get_related_entities(conn: Connection, terms: dict, intermediates: str = "al
                     # Find first ancestor/s that is/are either:
                     # - in the set of input terms
                     # - a top level term (below owl:Thing)
-                    ancestors = get_top_ancestors(ancestor_hierarchy, term_id,
-                                                  top_terms=list(terms.keys()))
+                    ancestors = get_top_ancestors(
+                        ancestor_hierarchy,
+                        term_id,
+                        remove_redundancy=True,
+                        top_terms=list(terms.keys()),
+                    )
                 else:
                     # Otherwise get a set of ancestors, stopping at terms that are either:
                     # - in the set of input terms
@@ -624,6 +639,7 @@ def get_related_entities(conn: Connection, terms: dict, intermediates: str = "al
 def get_top_ancestors(
     hierarchy: dict,
     term_id: str,
+    remove_redundancy: bool = False,
     top_ancestors: set = None,
     top_terms: list = None,
 ) -> set:
@@ -631,6 +647,7 @@ def get_top_ancestors(
 
     :param hierarchy: dict containing child -> list of parents
     :param term_id: term to retrieve top ancestors for
+    :param remove_redundancy: if True, pass through ancestors set to remove ancestors-of-ancestors
     :param top_ancestors: set to collect top ancestors in
     :param top_terms: set of terms to consider as top ancestors
     :return set of top ancestors"""
@@ -642,14 +659,26 @@ def get_top_ancestors(
         top_ancestors.add(term_id)
     else:
         for p in parents:
+            if p == term_id:
+                continue
             if p == "owl:Thing":
                 top_ancestors.add(term_id)
-            elif p in top_terms:
+            elif top_terms and p in top_terms:
                 top_ancestors.add(p)
             else:
                 top_ancestors.update(
-                    get_top_ancestors(hierarchy, p, top_ancestors=top_ancestors, top_terms=top_terms)
+                    get_top_ancestors(
+                        hierarchy, p, top_ancestors=top_ancestors, top_terms=top_terms
+                    )
                 )
+    if remove_redundancy:
+        # Pass through parents to remove redundancy
+        redundant_ancestors = set()
+        for ta in top_ancestors:
+            ancestors_of_ta = get_top_ancestors(hierarchy, ta) - {ta}
+            redundant_ancestors.update(ancestors_of_ta.intersection(top_ancestors))
+        if redundant_ancestors:
+            top_ancestors = top_ancestors - redundant_ancestors
     return top_ancestors
 
 

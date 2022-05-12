@@ -1,0 +1,8 @@
+1	0	graph	obo:OBI_0302729	rdfs:label	chemical solution	@en	
+1	0	graph	obo:OBI_0302729	rdfs:subClassOf	obo:BFO_0000040	_IRI	
+1	0	graph	obo:OBI_0302729	rdf:type	owl:Class	_IRI	
+1	0	graph	obo:OBI_0000576	rdfs:label	scattered molecular aggregate	@en	
+1	0	graph	obo:OBI_0000576	rdfs:subClassOf	obo:BFO_0000040	_IRI	
+1	0	graph	obo:OBI_0000576	rdf:type	owl:Class	_IRI	
+1	0	graph	obo:BFO_0000040	rdfs:label	material entity	@en	
+1	0	graph	obo:BFO_0000040	rdf:type	owl:Class	_IRI	

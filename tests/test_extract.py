@@ -10,7 +10,7 @@ def extract_no_hierarchy(conn):
         extract_table="test_extract_no_hierarchy",
         no_hierarchy=True,
         predicates=["rdfs:label", "BFO:0000179"],
-        terms={"OBI:0100046": {}, "BFO:0000040": {}}
+        terms={"OBI:0100046": {}, "BFO:0000040": {}},
     )
     compare_tables(conn, "extract_no_hierarchy")
 
@@ -20,15 +20,40 @@ def extract_with_ancestors(conn):
         conn,
         extract_table="test_extract_with_ancestors",
         predicates=["rdfs:label", "BFO:0000179"],
-        terms={"OBI:0100046": {"Related": "ancestors"}}
+        terms={"OBI:0100046": {"Related": "ancestors"}},
     )
     compare_tables(conn, "extract_with_ancestors")
 
 
 def extract_with_ancestors_no_intermediates(conn):
     extract(
-        conn, extract_table="test_extract_with_ancestors_no_intermediates", intermediates="none", predicates=["rdfs:label"], terms={"OBI:0100046": {"Related": "ancestors"}, "OBI:0000666": {"Related": "ancestors"}})
+        conn,
+        extract_table="test_extract_with_ancestors_no_intermediates",
+        intermediates="none",
+        predicates=["rdfs:label"],
+        terms={"OBI:0100046": {"Related": "ancestors"}, "OBI:0000666": {"Related": "ancestors"}},
+    )
     compare_tables(conn, "extract_with_ancestors_no_intermediates")
+
+
+def extract_with_children(conn):
+    extract(
+        conn,
+        extract_table="test_extract_with_children",
+        predicates=["rdfs:label"],
+        terms={"BFO:0000040": {"Related": "children"}},
+    )
+    compare_tables(conn, "extract_with_children")
+
+
+def extract_with_descendants(conn):
+    extract(
+        conn,
+        extract_table="test_extract_with_descendants",
+        predicates=["rdfs:label"],
+        terms={"BFO:0000040": {"Related": "descendants"}},
+    )
+    compare_tables(conn, "extract_with_descendants")
 
 
 def test_extract_sqlite(create_sqlite_db):

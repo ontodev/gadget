@@ -53,7 +53,10 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
     :return: dict of child -> set of parents
     """
     values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
-    query = "WITH RECURSIVE ancestors(parent, child) AS (VALUES " + values + f""" UNION
+    query = (
+        "WITH RECURSIVE ancestors(parent, child) AS (VALUES "
+        + values
+        + f""" UNION
         -- The parent of the given terms:
         SELECT object AS parent, subject AS child
         FROM "{statement}"
@@ -78,6 +81,7 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
           AND "{statement}".datatype = '_IRI'
       )
       SELECT * FROM ancestors"""
+    )
     query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
     results = conn.execute(query, term_ids=term_ids).fetchall()
     ancestors = defaultdict(list)
@@ -100,7 +104,9 @@ def get_children(conn: Connection, term_id: str, statement: str = "statement"):
     return [x["subject"] for x in results]
 
 
-def get_descendant_hierarchy(conn: Connection, term_ids: list, statement: str = "statement") -> dict:
+def get_descendant_hierarchy(
+    conn: Connection, term_ids: list, statement: str = "statement"
+) -> dict:
     """Get the descendant hierarchies as a dict of parent -> list of children for a list of terms.
 
     :param conn: database connection
@@ -108,7 +114,10 @@ def get_descendant_hierarchy(conn: Connection, term_ids: list, statement: str = 
     :param statement: name of ontology statement table
     :return dict of parent -> list of children"""
     values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
-    query = "WITH RECURSIVE descendants(child, parent) AS (VALUES " + values + f""" UNION
+    query = (
+        "WITH RECURSIVE descendants(child, parent) AS (VALUES "
+        + values
+        + f""" UNION
             -- The children of the given terms:
             SELECT subject AS child, object AS parent
             FROM "{statement}"
@@ -133,6 +142,7 @@ def get_descendant_hierarchy(conn: Connection, term_ids: list, statement: str = 
               AND "{statement}".datatype = '_IRI'
           )
           SELECT * FROM descendants"""
+    )
     query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
     results = conn.execute(query, term_ids=term_ids)
     descendants = defaultdict(list)
@@ -437,3 +447,38 @@ def get_top_entity_type(conn: Connection, term_id: str, statements="statements")
             elif "rdfs:subPropertyOf" in preds:
                 return "owl:AnnotationProperty"
     return "owl:Class"
+
+
+def validate_table(conn, statement):
+    # First validate that the table actually exists
+    # this also ensures that the table name is safe before we use it in f-strings
+    if str(conn.engine.url).startswith("sqlite"):
+        query = sql_text("SELECT name FROM sqlite_master WHERE type = 'table' and name = :table")
+    else:
+        query = sql_text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :table)"
+        )
+    res = conn.execute(query, table=statement).fetchone()
+    if not res:
+        raise ValueError(f"Ontology statement table '{statement}' does not exist")
+
+    # Then check that the table is in the correct format (LDTab)
+    if str(conn.engine.url).startswith("sqlite"):
+        results = conn.execute(f"PRAGMA table_info({statement})")
+    else:
+        results = conn.execute(
+            f"""SELECT column_name AS name FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = {statement}"""
+        )
+    cols = set([x["name"] for x in results])
+    if not cols == {
+        "assertion",
+        "retraction",
+        "graph",
+        "subject",
+        "predicate",
+        "object",
+        "datatype",
+        "annotation",
+    }:
+        raise TypeError(f"Table '{statement}' is not in correct LDTab format")

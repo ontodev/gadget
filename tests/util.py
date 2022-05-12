@@ -46,17 +46,15 @@ def add_statement_table(conn, table_name):
 def add_tables(conn):
     with conn.begin():
         conn.execute("DROP TABLE IF EXISTS prefix")
-        conn.execute(
-            "CREATE TABLE prefix (prefix TEXT PRIMARY KEY NOT NULL, base TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE prefix (prefix TEXT PRIMARY KEY NOT NULL, base TEXT NOT NULL)")
         with open("tests/resources/prefix.tsv") as f:
             rows = list(csv.reader(f, delimiter="\t"))
             for r in rows:
                 conn.execute(f"INSERT INTO prefix VALUES ('{r[0]}', '{r[1]}')")
-        add_statement_table(conn, "statement")
-        add_statement_table(conn, "extract_no_hierarchy")
-        add_statement_table(conn, "extract_with_ancestors")
-        add_statement_table(conn, "extract_with_ancestors_no_intermediates")
+        for t in os.listdir("tests/resources"):
+            if t == "prefix.tsv":
+                continue
+            add_statement_table(conn, os.path.splitext(t)[0])
 
 
 def compare_tables(conn, table_name):
