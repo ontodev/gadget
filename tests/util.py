@@ -14,27 +14,15 @@ postgres_url = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PW}@{POSTGRES_H
 sqlite_url = "sqlite:///" + os.path.abspath("build/obi.db")
 
 
-def add_statement_table(conn, table_name):
+def add_table(conn, table_name):
     conn.execute(f"DROP TABLE IF EXISTS {table_name}")
-    conn.execute(
-        f"""CREATE TABLE {table_name} (
-            assertion INT NOT NULL,
-            retraction INT NOT NULL DEFAULT 0,
-            graph TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            predicate TEXT NOT NULL,
-            object TEXT NOT NULL,
-            datatype TEXT NOT NULL,
-            annotation TEXT
-        )"""
-    )
     with open(f"tests/resources/{table_name}.tsv") as f:
-        rows = []
-        for row in csv.reader(f, delimiter="\t"):
-            rows.append([None if not x else x for x in row])
-        for r in rows:
+        reader = csv.reader(f, delimiter="\t")
+        headers = ", ".join([x.replace(":", "_") for x in next(reader)])
+        conn.execute(f"CREATE TABLE {table_name} ({headers})")
+        for row in reader:
             query = []
-            for itm in r:
+            for itm in row:
                 if not itm:
                     query.append("NULL")
                     continue
@@ -54,26 +42,41 @@ def add_tables(conn):
         for t in os.listdir("tests/resources"):
             if t == "prefix.tsv":
                 continue
-            add_statement_table(conn, os.path.splitext(t)[0])
+            add_table(conn, os.path.splitext(t)[0])
+
+
+def compare_lines(actual_lines, expected_lines):
+    removed = list(set(expected_lines) - set(actual_lines))
+    added = list(set(actual_lines) - set(expected_lines))
+    removed = [f"---\t{x}" for x in removed if x != ""]
+    added = [f"+++\t{x}" for x in added if x != ""]
+    diff = removed + added
+    if diff:
+        print("The actual and expected outputs differ:\n")
+        for line in diff:
+            print(line)
+        pytest.fail()
 
 
 def compare_tables(conn, table_name):
     results = conn.execute(
-        f"""SELECT subject, predicate, object, datatype, "expected" AS source
+        f"""SELECT *, "expected" AS source
             FROM (SELECT * FROM {table_name}
-                           EXCEPT
-                           SELECT * FROM test_{table_name})
+                   EXCEPT
+                   SELECT * FROM test_{table_name})
             UNION ALL
-            SELECT subject, predicate, object, datatype, "actual" AS source
+            SELECT *, "actual" AS source
             FROM (SELECT * FROM test_{table_name}
-                           EXCEPT
-                           SELECT * FROM {table_name})"""
+                   EXCEPT
+                   SELECT * FROM {table_name})"""
     ).fetchall()
+    import logging
     if results:
         expected = []
         actual = []
         for res in results:
             res = dict(res)
+            logging.error(res)
             s = res["source"]
             del res["source"]
             if s == "expected":
@@ -82,11 +85,11 @@ def compare_tables(conn, table_name):
                 actual.append(res.values())
         if expected:
             print(f"\n{len(expected)} rows missing from test output:\n")
-            print(tabulate(expected, headers=["subject", "predicate", "object", "datatype"]))
+            print(tabulate(expected, headers=results[0].keys()))
             print()
         if actual:
             print(f"\n{len(actual)} extra rows in test output:\n")
-            print(tabulate(actual, headers=["subject", "predicate", "object", "datatype"]))
+            print(tabulate(actual, headers=results[0].keys()))
             print()
         pytest.fail("test output differs from expected output")
 

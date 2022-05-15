@@ -6,6 +6,12 @@ from html import escape as html_escape
 from typing import Tuple
 
 
+def clean_object(x):
+    if x.startswith("<") and x.endswith(">"):
+        return x[1:-1]
+    return x
+
+
 def get_html_label(iri: str, labels: dict, predicate: str = None) -> list:
     """Create a hiccup-style RDFa list for a term.
 
@@ -89,7 +95,7 @@ def object2str(obj: dict, labels: dict, entity_types: dict) -> str:
         labeled = wiring_rs.ofn_labeling(typed, labels)
         return wiring_rs.ofn_2_man(labeled)
     elif dt.lower() == "_iri":
-        return labels.get(obj["object"], obj["object"])
+        return labels.get(obj["object"], clean_object(obj["object"]))
     else:
         # TODO: datatypes?
         return obj["object"]

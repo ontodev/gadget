@@ -71,13 +71,40 @@ LEFT JOIN synonyms s ON t.subject = s.subject;
 ## CLI Usage
 
 The following modules are also supported as CLI commands:
+- [Export](#export)
 - [Extract](#extract)
+
+### Global Options
+
+Each command expects a `-d <database>`/`--database <database>` option that provides the path to the database to operate on. You can also provide `-S <statement>`/`--statement <statement>` to specify the name of your ontology statement table, if it is not the default: `statement`.
+
+#### Terms
+
+The term or terms as CURIEs or labels are specified with `-t <term>`/`--term <term>`. You may also specify multiple terms with `-T <file>`/`--terms <file>`, where the file contains a list of CURIEs.
+
+#### Predicates
+
+You may also specify which predicates you would like to include with `-p <term>`/`--predicate <term>` or `-P <file>`/`--predicates <file>`, where the file contains a list of predicate CURIEs or labels. Otherwise, the output includes all predicates.
+
+### Export
+
+The `export` module creates a table (default TSV) output containing the terms and their predicates written to stdout.
+```
+python3 -m gadget.export -d [path-to-database] -S [statement-table] -t [term] > [output-tsv]
+```
+
+Export options:
+* `-f <fmt>`/`--format <fmt>`: specify the format of the export (TSV, CSV, or JSON)
+* `-s <char>`/`--split <char>`: specify the character to split multiple cell values on (`|`)
+* `-V <values>`/`--values <values>`: specify the default value format, i.e., how cell values are rendered (CURIE, IRI, or LABEL)
+    * Note: if you do not specify any predicates to include, the default value format option for each term will be included as the first column
+* `-a`/`--include-annotation`: include annotations as additional columns followiing the predicate when present
 
 ### Extract
 
-The `extract` module creates a new table called `extract` containing the term(s) and term ancestors as a new extracted module. You can override the name of the new table using `-e <table>`/`--extract-table <table>`.
+The `extract` module creates a new table called `extract` containing the term(s) and term ancestors up to `owl:Thing` as a new extracted module.
 ```
-python3 -m gadget.extract -d [path-to-database] -t [term]
+python3 -m gadget.extract -d [path-to-database] -S [statement-table] -t [term]
 ```
 
 This table can then be exported to TTL using [LDTab](https://github.com/ontodev/ldtab.clj):
@@ -85,15 +112,14 @@ This table can then be exported to TTL using [LDTab](https://github.com/ontodev/
 ldtab export -t extract [path-to-database] [output-ttl]
 ```
 
-The term or terms as CURIEs or labels are specified with `-t <term>`/`--term <term>`. You may also specify multiple terms to extract with `-T <file>`/`--terms <file>` where the file contains a list of CURIEs to extract.
-
-The output contains the specified term and all its ancestors up to `owl:Thing`. If you don't wish to include the ancestors of the term/terms, include the `-n`/`--no-hierarchy` flag.
-
-You may also specify which predicates you would like to include with `-p <term>`/`--predicate <term>` or `-P <file>`/`--predicates <file>`, where the file contains a list of predicate CURIEs or labels. Otherwise, the output includes all predicates. Since this extracts a hierarchy, unless you include the `-n` flag, `rdfs:subClassOf` will always be included.
-
-By default, *all* intermediate terms are included between the term to extract and the highest-level term. If you don't want to include any intermediates, you can run `extract` with `--i none`/`--intermediates none`. This maintains the hierarchy between extracted terms, but removes intermediate terms that are not in the set of input terms to extract.
-
-Finally, if you want to annotate all extracted terms with a source ontology IRI, you can use the `-m <IRI>`/`--imported-from <IRI>` option. This expects the full ontology IRI. The annotation added to each term, by default, will use the IAO ['imported from'](http://purl.obolibrary.org/obo/IAO:0000412) property (note that this means `IAO` must be defined in your `prefixes` table as well). You can override this property with `-M <term_id>`/`--import-from-property <term_id>`.
+Extract options:
+* `-e <table>`/`--extract-table <table>`: name of extract table to create
+* `-n`/`--no-hierarchy`: do not include ancestors of the input term/s
+* `-I <intermediates>`/`--intermediates <intermedaites>`: specify intermediate nodes to include (all or none)
+* `-m <ontology-IRI>`/`--imported-from <ontology-IRI>`: annotate extracted terms with a source ontology IRI
+* `-M <predicate>`/`--imported-from-property <predicate>`: property to use for `imported-from` annotation (['imported from'](http://purl.obolibrary.org/obo/IAO:0000412))
+* `-i <file>`/`--imports <file>`: see below, [Creating Import Modules](#creating-import-modules)
+* `-s <source>`/`--source <source>`: see below, [Creating Import Modules](#creating-import-modules)
 
 #### Creating Import Modules
 

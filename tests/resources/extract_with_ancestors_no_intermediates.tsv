@@ -1,3 +1,4 @@
+assertion INT NOT NULL	retraction INT NOT NULL DEFAULT 0	graph TEXT NOT NULL	subject TEXT NOT NULL	predicate TEXT NOT NULL	object TEXT NOT NULL	datatype TEXT NOT NULL	annotation TEXT
 1	0	graph	OBI:0000666	rdfs:label	background correction data transformation	@en	
 1	0	graph	OBI:0000666	rdfs:subClassOf	BFO:0000001	_IRI	
 1	0	graph	OBI:0000666	rdf:type	owl:Class	_IRI	

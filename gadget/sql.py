@@ -5,7 +5,7 @@ from collections import defaultdict
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.sql.expression import text as sql_text
-from typing import Dict, List
+from typing import Dict, List, Union
 
 MAX_SQL_VARS = os.environ.get("MAX_SQL_VARS") or 999
 TOP_LEVELS = {
@@ -225,25 +225,31 @@ def get_entity_types(
 def get_ids(
     conn: Connection,
     id_or_labels: List[str] = None,
-    id_type="subject",
+    id_type: str = "subject",
+    return_dict: bool = False,
     statement: str = "statement",
-) -> list:
+) -> Union[list, dict]:
     """Create list of IDs from a given list of IDs or labels.
 
     :param conn: database connection to query
     :param id_or_labels: list of IDs or labels to return all IDs for
     :param id_type: type of IDs to return (subject or predicate)
+    :param return_dict: if True, return the results as a dict of input (ID or label) -> ID
+                        (only used if id_or_labels are provided)
     :param statement: name of the ontology statement table
     :return: list of IDs
     """
     if id_or_labels:
         query = sql_text(
-            f"""SELECT DISTINCT subject FROM "{statement}"
+            f"""SELECT DISTINCT subject, object FROM "{statement}"
             WHERE predicate = 'rdfs:label' AND object IN :id_or_labels
             UNION
-            SELECT DISTINCT {id_type} FROM "{statement}" WHERE {id_type} IN :id_or_labels"""
+            SELECT DISTINCT {id_type} AS subject, {id_type} AS object FROM "{statement}"
+            WHERE {id_type} IN :id_or_labels"""
         ).bindparams(bindparam("id_or_labels", expanding=True))
         results = conn.execute(query, id_or_labels=id_or_labels)
+        if return_dict:
+            return {res["object"]: res["subject"] for res in results}
         return [res["subject"] for res in results]
     else:
         # Get all predicates

@@ -1,3 +1,4 @@
+assertion INT NOT NULL	retraction INT NOT NULL DEFAULT 0	graph TEXT NOT NULL	subject TEXT NOT NULL	predicate TEXT NOT NULL	object TEXT NOT NULL	datatype TEXT NOT NULL	annotation TEXT
 1	0	graph	OBI:0100046	rdfs:label	phosphate buffered saline solution	@en	
 1	0	graph	OBI:0100046	rdf:type	owl:Class	_IRI	
 1	0	graph	BFO:0000040	rdfs:label	material entity	@en	

@@ -1,3 +1,4 @@
+assertion INT NOT NULL	retraction INT NOT NULL DEFAULT 0	graph TEXT NOT NULL	subject TEXT NOT NULL	predicate TEXT NOT NULL	object TEXT NOT NULL	datatype TEXT NOT NULL	annotation TEXT
 1	0	graph	obo:OBI_0302729	rdfs:label	chemical solution	@en	
 1	0	graph	obo:OBI_0302729	rdfs:subClassOf	obo:BFO_0000040	_IRI	
 1	0	graph	obo:OBI_0302729	rdf:type	owl:Class	_IRI	
