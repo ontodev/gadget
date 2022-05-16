@@ -14,7 +14,7 @@ To install `wiring.py` outside of a virtual environment:
 
 ## Usage
 
-`gadget` operates on a linked data table ([LDTab](https://github.com/ontodev/ldtab.clj)). You must also define the following views before using any `gadget` utilities. 
+`gadget` operates on a linked data table ([LDTab](https://github.com/ontodev/ldtab.clj)).
 
 ### Databases
 
