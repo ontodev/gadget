@@ -17,7 +17,7 @@ from .sql import (
 )
 
 """
-Usage: python3 extract.py -d <sqlite-database> -t <curie> > <ttl-file>
+Usage: python3 -m gadget.extract -d <sqlite-database> -t <curie>
 
 Creates a new extract table containing the term(s), predicates, and ancestors. By default,
 this table is called 'extract', but you can override with `-e <table>`/`--extract-table <table>`.
@@ -43,11 +43,10 @@ The CURIEs must use a prefix from the 'prefixes' table.
 
 def main():
     p = ArgumentParser()
+
+    # Global options
     p.add_argument(
         "-d", "--database", required=True, help="Database file (.db) or configuration (.ini)"
-    )
-    p.add_argument(
-        "-e", "--extract-table", help="Name for extract table (default: extract)", default="extract"
     )
     p.add_argument(
         "-S",
@@ -60,17 +59,14 @@ def main():
         "-T", "--terms", help="File containing CURIES or labels of terms to extract",
     )
     p.add_argument(
-        "-r",
-        "--related",
-        help="type of related terms of input terms to include (default: ancestors)",
-        default="ancestors",
-    )
-    p.add_argument(
         "-p", "--predicate", action="append", help="CURIE or label of predicate to include",
     )
     p.add_argument(
         "-P", "--predicates", help="File containing CURIEs or labels of predicates to include",
     )
+
+    # Extract options
+    p.add_argument("-c", "--config", help="Source configuration for imports")
     p.add_argument(
         "-C",
         "--copy",
@@ -78,8 +74,10 @@ def main():
         help="Copy the values of a predicate to another predicate (--C <from> <to>)",
         nargs=2,
     )
+    p.add_argument(
+        "-e", "--extract-table", help="Name for extract table (default: extract)", default="extract"
+    )
     p.add_argument("-i", "--imports", help="TSV or CSV file containing import module details")
-    p.add_argument("-c", "--config", help="Source configuration for imports")
     p.add_argument(
         "-I",
         "--intermediates",
@@ -95,14 +93,20 @@ def main():
         help="ID of property to use for 'imported from' annotation (default: IAO:0000412)",
         default="IAO:0000412",
     )
-    p.add_argument("-s", "--source", help="Ontology source to filter imports file")
-    p.add_argument("-f", "--format", help="Output format (ttl or json)", default="ttl")
     p.add_argument(
         "-n",
         "--no-hierarchy",
         action="store_true",
         help="If provided, do not create any rdfs:subClassOf statements",
     )
+    p.add_argument(
+        "-r",
+        "--related",
+        help="type of related terms of input terms to include (default: ancestors)",
+        default="ancestors",
+    )
+    p.add_argument("-s", "--source", help="Ontology source to filter imports file")
+
     args = p.parse_args()
     run_extract(args)
 
@@ -440,7 +444,7 @@ def extract(
     predicate_ids = None
     if predicates:
         # Current predicates are IDs or labels - make sure we get all the IDs
-        predicate_ids = get_ids(conn, predicates, statement=statement)
+        predicate_ids = get_ids(conn, predicates, id_type="predicate", statement=statement)
 
     # Pre-build clean up - this will remove any existing extract table
     clean(conn, extract_table=extract_table)

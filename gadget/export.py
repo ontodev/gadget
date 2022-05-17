@@ -1,4 +1,5 @@
 import csv
+import hiccupy
 import json
 import logging
 import re
@@ -15,6 +16,8 @@ from .sql import get_entity_types, get_ids, get_labels, get_objects, get_prefixe
 
 def main():
     p = ArgumentParser()
+
+    # Global options
     p.add_argument(
         "-d", "--database", required=True, help="Database file (.db) or configuration (.ini)"
     )
@@ -34,6 +37,20 @@ def main():
     p.add_argument(
         "-P", "--predicates", help="File containing CURIEs or labels of predicates to include",
     )
+
+    # Export options
+    p.add_argument(
+        "-a",
+        "--include-annotations",
+        action="store_true",
+        help="Include annotations as additional columns when present",
+    )
+    p.add_argument(
+        "-c",
+        "--contents-only",
+        action="store_true",
+        help="If provided with HTML format, render HTML without roots",
+    )
     p.add_argument("-f", "--format", help="Output format (tsv, csv, html)", default="tsv")
     p.add_argument("-s", "--split", help="Character to split multiple values on", default="|")
     p.add_argument(
@@ -41,12 +58,6 @@ def main():
         "--values",
         help="Default value format for cell values (default: label)",
         default="LABEL",
-    )
-    p.add_argument(
-        "-a",
-        "--include-annotations",
-        action="store_true",
-        help="Include annotations as additional columns when present",
     )
     args = p.parse_args()
 
@@ -74,6 +85,7 @@ def main():
             include_annotations=args.include_annotations,
             predicates=predicates_clean,
             sep=args.split,
+            standalone=not args.contents_only,
             statement=args.statement,
             terms=terms,
             value_formats=value_formats,
@@ -81,8 +93,66 @@ def main():
     )
 
 
+def dicts2rdfa(rendered_data: list, headers: list, prefixes: dict, standalone: bool = True) -> str:
+    """Transform data with pre-rendered values to RDFa.
+
+    :param rendered_data: list of dicts with hiccup lists as predicate values
+    :param headers: list of headers for output
+    :param prefixes: dict of prefix -> base
+    :param standalone: if True, include HTML root & headers
+    :return:
+    """
+    thead = [["th", h] for h in headers]
+    thead.insert(0, "tr")
+    thead = ["thead", thead]
+    tbody = ["tbody"]
+    for itm in rendered_data:
+        tr = ["tr"]
+        for h in headers:
+            v = itm.get(h)
+            logging.error(h)
+            logging.error(v)
+            if not v:
+                tr.append(["td"])
+            else:
+                tr.append(["td", v])
+        tbody.append(tr)
+
+    # Create the prefix element
+    pref_strs = []
+    for prefix, base in prefixes.items():
+        pref_strs.append(f"{prefix}: {base}")
+    pref_str = "\n".join(pref_strs)
+
+    table = ["table", {"class": "table table-striped", "prefix": pref_str}, thead, tbody]
+    if standalone:
+        head = [
+            "head",
+            ["meta", {"charset": "utf-8"}],
+            [
+                "meta",
+                {
+                    "name": "viewport",
+                    "content": "width=device-width, initial-scale=1, shrink-to-fit=no",
+                },
+            ],
+            [
+                "link",
+                {
+                    "rel": "stylesheet",
+                    "href": "https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css",
+                    "crossorigin": "anonymous",
+                },
+            ],
+        ]
+        html = ["html", head, ["body", ["div", {"class": "container"}, table]]]
+    else:
+        html = table
+    return hiccupy.render(html)
+
+
 def dicts2tsv(rendered_data: list, headers: list, delimiter: str = "\t",) -> str:
-    """Transform data from SQLite database to a list of dicts suitable for DictWriters.
+    """Transform data with pre-rendered values to a list of dicts suitable for DictWriters.
 
     :param rendered_data: list of dicts to write to DictWriter
     :param headers: list of headers for output
@@ -103,26 +173,41 @@ def export(
     include_annotations: bool = False,
     predicates: list = None,
     sep: str = "|",
+    standalone: bool = True,
     statement: str = "statement",
     terms: list = None,
     value_formats: dict = None,
 ) -> str:
-    """
+    """Export details about ontology terms in the specified format.
 
-    :param conn:
-    :param default_value_format:
-    :param fmt:
-    :param include_annotations:
-    :param predicates:
-    :param sep:
-    :param statement:
-    :param terms:
-    :param value_formats:
-    :return:
+    :param conn: database connection
+    :param default_value_format: format to render ontology terms (CURIE, IRI, or LABEL) in cells
+    :param fmt: output format (TSV, CSV, or JSON)
+    :param include_annotations: include axiom annotations as additional columns when present
+    :param predicates: list of predicates (ID or label) to include as columns in output -
+                       if not specified, default_value_format is included as the first column to
+                       identify the term
+    :param sep: character to separate multiple cell values
+    :param standalone: if True, include HTML root & headers
+    :param statement: name of ontology statement table
+    :param terms: list of terms (ID or label) to include as rows in output - if not specified,
+                  all subjects from the statement table are included in output
+    :param value_formats: optional dict of predicate ID to value format for output
+                          (CURIE, IRI, or LABEL) - values for predicates not in this dict will be
+                          rendered in the default_value_format
+    :return: string output in given format
     """
+    # We only need to get prefixes if we need to render any IRIs, or if fmt is HTML (prefixes needed for RDFa)
     prefixes = {}
-    if default_value_format == "IRI" or (predicates and "IRI" in predicates):
+    if (
+        fmt == "html"
+        or default_value_format == "IRI"
+        or (predicates and "IRI" in predicates)
+        or (value_formats and "IRI" in value_formats.values())
+    ):
         prefixes = get_prefixes(conn)
+
+    # Use predicates to determine what values we need to export
     if predicates:
         # If the user provided a set of predicates, the output should include each of these
         # even if there are no values
@@ -182,6 +267,7 @@ def export(
         # ... so we know to exclude predicates that do not have any values
         headers = None
 
+    # Get the set of terms to export
     term_ids = None
     if terms:
         # Current terms are IDs or labels - make sure we get all the IDs
@@ -205,6 +291,7 @@ def export(
         include_annotations=include_annotations,
         include_id=True,
         prefixes=prefixes,
+        rdfa=fmt == "html",
         sep=sep,
         statement=statement,
         value_formats=value_formats,
@@ -261,7 +348,9 @@ def export(
 
     # Then replace the predicate IDs (keys) with the correct display header
     # - this may be label, CURIE, or IRI depending on default value format OR what was input
-    rendered = replace_predicate_ids(rendered, headers, prefixes, all_predicate_labels)
+    rendered = replace_predicate_ids(
+        rendered, headers, prefixes, all_predicate_labels, rdfa=fmt == "html"
+    )
 
     # Render the output as string, either table or JSON
     if fmt == "tsv" or fmt == "csv":
@@ -269,15 +358,17 @@ def export(
         if fmt == "csv":
             delimiter = ","
         return dicts2tsv(rendered, headers, delimiter=delimiter)
+    elif fmt == "html":
+        return dicts2rdfa(rendered, headers, prefixes, standalone=standalone)
     return json.dumps(rendered, indent=2)
 
 
 def get_iri(prefixes, curie):
-    """
+    """Get the full IRI for a CURIE.
 
-    :param prefixes:
-    :param curie:
-    :return:
+    :param prefixes: dict of prefix -> base
+    :param curie: CURIE to expand
+    :return: CURIE expanded as IRI, or CURIE if prefix cannot be found
     """
     if curie.startswith("<"):
         return curie[1:-1]
@@ -289,14 +380,16 @@ def get_iri(prefixes, curie):
     return curie.replace(prefix + ":", base)
 
 
-def replace_predicate_ids(data, headers, prefixes, predicate_labels):
-    """
+def replace_predicate_ids(data, headers, prefixes, predicate_labels, rdfa: bool = False):
+    """Replace the predicate IDs with the provided headers for the export output. These may be what
+    was originally passed in, or the predicates rendered in the value format (IRI, CURIE, or LABEL).
 
-    :param data:
-    :param headers:
-    :param prefixes:
-    :param predicate_labels:
-    :return:
+    :param data: export data
+    :param headers: list of headers in order
+    :param prefixes: dict of prefix -> base
+    :param predicate_labels: dict of predicate ID -> label
+    :param rdfa: set to True when the values of the predicate_objects dicts are hiccup lists for RDFa
+    :return: export data with output predicate labels
     """
     # Reverse predicate_label dict to get ID from label
     predicate_label_to_id = {v: k for k, v in predicate_labels.items()}
@@ -307,11 +400,21 @@ def replace_predicate_ids(data, headers, prefixes, predicate_labels):
         for predicate_label in headers:
             predicate_id = predicate_label_to_id.get(predicate_label, predicate_label)
             if predicate_id == "IRI":
-                itm_fixed["IRI"] = get_iri(prefixes, term_id)
+                if rdfa:
+                    itm_fixed["IRI"] = ["p", get_iri(prefixes, term_id)]
+                else:
+                    itm_fixed["IRI"] = get_iri(prefixes, term_id)
             elif predicate_id == "CURIE":
-                itm_fixed["CURIE"] = term_id
+                if rdfa:
+                    itm_fixed["CURIE"] = ["p", term_id]
+                else:
+                    itm_fixed["CURIE"] = term_id
             else:
                 value = itm.get(predicate_id)
+                if rdfa:
+                    # item is a hiccup list, we don't need to do anything
+                    itm_fixed[predicate_label] = value
+                    continue
                 if value:
                     itm_fixed[predicate_label] = value["value"]
                     annotation = value.get("annotation", {})
@@ -326,10 +429,10 @@ def terms2dicts(
     conn: Connection,
     data: dict,
     default_value_format: str = "LABEL",
-    hiccup: bool = False,
     include_annotations: bool = False,
     include_id: bool = True,
     prefixes: dict = None,
+    rdfa: bool = False,
     sep: str = "|",
     single_item_list: bool = False,
     statement: str = "statement",
@@ -340,10 +443,10 @@ def terms2dicts(
     :param conn:
     :param data:
     :param default_value_format:
-    :param hiccup:
     :param include_annotations:
     :param include_id:
     :param prefixes:
+    :param rdfa: if True, render values as hiccup-style RDFa lists
     :param sep:
     :param single_item_list:
     :param statement:
@@ -368,41 +471,54 @@ def terms2dicts(
         iris = {x: get_iri(prefixes, x) for x in object_ids}
     entity_types = get_entity_types(conn, object_ids, statement=statement)
 
-    # Second pass to render the OFN as Manchester with labels
-    if hiccup:
-        return render_hiccup(
-            pre_render,
-            labels,
-            entity_types,
-            include_annotations=include_annotations,
-            single_item_list=single_item_list,
-        )
-
     rendered = []
     for term_id, predicate_objects in pre_render.items():
         rendered_term = {}
         if include_id:
             rendered_term["ID"] = term_id
         for predicate, objs in predicate_objects.items():
+            # Determine which dict to use as "labels"
             value_format = value_formats.get(predicate, default_value_format)
             if value_format == "LABEL":
-                strs = [object2str(o, labels, entity_types) for o in objs]
+                use_labels = labels
             elif value_format == "CURIE":
-                strs = [object2str(o, curies, entity_types) for o in objs]
+                use_labels = curies
             else:
-                strs = [object2str(o, iris, entity_types) for o in objs]
+                use_labels = iris
+
+            if rdfa:
+                # Create a hiccup list, insert links, then render as string
+                hiccup_lst = render_hiccup(
+                    predicate,
+                    objs,
+                    use_labels,
+                    entity_types,
+                    include_annotations=include_annotations,
+                    single_item_list=single_item_list,
+                )
+                rendered_term[predicate] = hiccup_lst
+                continue
+
+            # Otherwise just render as a string
+            strs = [object2str(o, use_labels, entity_types) for o in objs]
             value = sep.join(sorted(strs))
+
+            # Maybe add the annotations to the dict, or just add the value
             annotations = [x["annotation"] for x in objs if x.get("annotation")]
             if include_annotations and annotations:
                 predicate_annotations = {}
                 for ann_objs in annotations:
                     for ann_predicate, annotation in ann_objs.items():
-                        if value_format == "LABEL":
-                            strs = [object2str(o, labels, entity_types) for o in annotation]
-                        elif value_format == "CURIE":
-                            strs = [object2str(o, curies, entity_types) for o in annotation]
+                        # Check if this predicate is in value formats
+                        # - if not, use the annotated predicate's value format
+                        ann_value_format = value_formats.get(ann_predicate, value_format)
+                        if ann_value_format == "LABEL":
+                            use_labels = labels
+                        elif ann_value_format == "CURIE":
+                            use_labels = curies
                         else:
-                            strs = [object2str(o, iris, entity_types) for o in annotation]
+                            use_labels = iris
+                        strs = [object2str(o, use_labels, entity_types) for o in annotation]
                         predicate_annotations[ann_predicate] = sep.join(sorted(strs))
                 rendered_term[predicate] = {"value": value, "annotation": predicate_annotations}
             else:

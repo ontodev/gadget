@@ -292,9 +292,12 @@ def term2rdfa(
     else:
         term_iri = get_iri(prefixes, term_id)
         if pre_render:
-            object_hiccup = render_hiccup(
-                pre_render, labels, entity_types, include_annotations=True, single_item_list=True
-            )[term_id]
+            object_hiccup = {
+                p: render_hiccup(
+                    p, o, labels, entity_types, include_annotations=True, single_item_list=True
+                )
+                for p, o in pre_render[term_id].items()
+            }
             attrs = ["ul", {"id": "annotations", "style": "margin-left: -1rem;"}]
             for predicate, objs in object_hiccup.items():
                 if predicate == "rdfs:label":

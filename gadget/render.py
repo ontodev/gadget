@@ -166,48 +166,26 @@ def pre_render_objects(data: dict) -> Tuple[dict, set]:
 
 
 def render_hiccup(
-    pre_render, labels, entity_types, include_annotations=False, single_item_list=False
+    predicate, objects, labels, entity_types, include_annotations=False, single_item_list=False
 ):
-    """Parse the objects of a pre-rendered dictionary (from pre_render_objects) of terms to
-    hiccup-style lists to be rendered as HTML.
-
-    :param pre_render:
-    :param labels:
-    :param entity_types:
-    :param include_annotations:
-    :param single_item_list:
-    :return:
-    """
-    rendered = {}
-    for term_id, predicate_objects in pre_render.items():
-        rendered_term = defaultdict()
-        for predicate, objs in predicate_objects.items():
-            if len(objs) > 1 or single_item_list:
-                lst = ["ul", {"class": "annotations"}]
-                lst.extend(
-                    [
-                        object2hiccup(
-                            predicate,
-                            x,
-                            labels,
-                            entity_types,
-                            as_list=True,
-                            include_annotations=include_annotations,
-                        )
-                        for x in objs
-                    ]
-                )
-                rendered_term[predicate] = lst
-            elif len(objs) == 1:
-                rendered_term[predicate] = object2hiccup(
+    if len(objects) > 1 or single_item_list:
+        lst = ["ul"]
+        lst.extend(
+            [
+                object2hiccup(
                     predicate,
-                    objs[0],
+                    o,
                     labels,
                     entity_types,
+                    as_list=True,
                     include_annotations=include_annotations,
                 )
-            else:
-                rendered_term[predicate] = []
-        # term ID -> predicate IDs -> hiccup lists
-        rendered[term_id] = rendered_term
-    return rendered
+                for o in objects
+            ]
+        )
+        return lst
+    elif len(objects) == 1:
+        return object2hiccup(
+            predicate, objects[0], labels, entity_types, include_annotations=include_annotations,
+        )
+    return []
