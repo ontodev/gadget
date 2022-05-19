@@ -110,8 +110,6 @@ def dicts2rdfa(rendered_data: list, headers: list, prefixes: dict, standalone: b
         tr = ["tr"]
         for h in headers:
             v = itm.get(h)
-            logging.error(h)
-            logging.error(v)
             if not v:
                 tr.append(["td"])
             else:
@@ -404,11 +402,11 @@ def replace_predicate_ids(data, headers, prefixes, predicate_labels, rdfa: bool 
                     itm_fixed["IRI"] = ["p", get_iri(prefixes, term_id)]
                 else:
                     itm_fixed["IRI"] = get_iri(prefixes, term_id)
-            elif predicate_id == "CURIE":
+            elif predicate_id in ["CURIE", "ID"]:
                 if rdfa:
-                    itm_fixed["CURIE"] = ["p", term_id]
+                    itm_fixed[predicate_id] = ["p", term_id]
                 else:
-                    itm_fixed["CURIE"] = term_id
+                    itm_fixed[predicate_id] = term_id
             else:
                 value = itm.get(predicate_id)
                 if rdfa:

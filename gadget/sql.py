@@ -265,18 +265,55 @@ def get_labels(conn: Connection, term_ids: list, statement="statement") -> Dict[
     :param statement: name of ontology statement table
     :return:
     """
-    labels = {}
+    labels = defaultdict(list)
     # Use chunks to get around max SQL variables
     chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+    has_multi_labels = False
     for chunk in chunks:
         query = sql_text(
-            f"""SELECT subject, object FROM "{statement}"
+            f"""SELECT subject, object, datatype FROM "{statement}"
                 WHERE subject IN :ids AND predicate = 'rdfs:label' AND object IS NOT NULL"""
         ).bindparams(bindparam("ids", expanding=True))
         results = conn.execute(query, {"ids": chunk})
         for res in results:
-            labels[res["subject"]] = res["object"]
-    return labels
+            term_id = res["subject"]
+            if term_id not in labels:
+                labels[term_id] = []
+            else:
+                has_multi_labels = True
+            labels[term_id].append({"object": res["object"], "datatype": res["datatype"]})
+    if not has_multi_labels:
+        # All terms have a single label, return the first result
+        return {k: v[0]["object"] for k, v in labels.items()}
+
+    # If at least one term has more than one label, we need to pick the "best" label
+    labels_clean = {}
+    for term_id, term_labels in labels.items():
+        if len(term_labels) == 1:
+            labels_clean[term_id] = term_labels[0]["object"]
+        else:
+            # Assign priority to datatypes and use these to select a "best" label
+            # (this assumes that the desired lang is @en)
+            selected_label = None
+            label_rank = None
+            for lbl in term_labels:
+                v = lbl["object"]
+                dt = lbl["datatype"]
+                if dt == "@en":
+                    p = 0
+                elif dt == "xsd:string":
+                    p = 1
+                else:
+                    p = 2
+                if not selected_label:
+                    selected_label = v
+                    label_rank = p
+                    continue
+                if label_rank > p:
+                    selected_label = v
+                    label_rank = p
+            labels_clean[term_id] = selected_label
+    return labels_clean
 
 
 def get_objects(

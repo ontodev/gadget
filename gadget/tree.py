@@ -62,10 +62,10 @@ def get_sorted_predicates(
     )
     SELECT DISTINCT predicate AS subject, labels.object AS object
     FROM "{statement}" s
-    LEFT JOIN labels ON predicate = labels.subject"""
+    LEFT JOIN labels ON predicate = labels.subject WHERE predicate NOT NULL """
     if exclude_ids:
         exclude = ", ".join([f"'{x}'" for x in exclude_ids])
-        query += " WHERE predicate NOT IN :exclude"
+        query += " AND predicate NOT IN :exclude"
         query = sql_text(query).bindparams(bindparam("exclude", expanding=True))
         results = conn.execute(query, exclude=exclude)
     else:
@@ -300,9 +300,6 @@ def term2rdfa(
             }
             attrs = ["ul", {"id": "annotations", "style": "margin-left: -1rem;"}]
             for predicate, objs in object_hiccup.items():
-                if predicate == "rdfs:label":
-                    # Label is already on the left side
-                    continue
                 pred_label = get_html_label(predicate, labels)
                 attrs.append(["li", pred_label, objs])
             attrs = [
