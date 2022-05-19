@@ -305,7 +305,7 @@ def term2rdfa(
             attrs = [
                 "div",
                 {"class": "col-md"},
-                ["div", {"class": "row"}, ["h4", labels.get(term_id, term_id)]],
+                ["div", {"class": "row"}, ["h4", {"id": "label"}, labels.get(term_id, term_id)]],
                 attrs,
             ]
             term = [
@@ -474,7 +474,7 @@ def tree(
         pref_strs.append(f"{prefix}: {base}")
     pref_str = "\n".join(pref_strs)
 
-    body_wrapper = ["div", {"id": "gadgetTree", "prefix": pref_str}]
+    body_wrapper = ["div", {"id": f"{statement}-tree", "class": f"gadgetTree", "prefix": pref_str}]
     if include_search:
         body_wrapper.append(
             [
