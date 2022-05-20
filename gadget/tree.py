@@ -292,11 +292,13 @@ def term2rdfa(
     else:
         term_iri = get_iri(prefixes, term_id)
         if pre_render:
+            # Order the pre-render by predicates as determined by predicate_ids
+            pre_render = sorted(pre_render[term_id].items(), key=lambda x: predicate_ids.index(x[0]))
             object_hiccup = {
                 p: render_hiccup(
                     p, o, labels, entity_types, include_annotations=True, single_item_list=True
                 )
-                for p, o in pre_render[term_id].items()
+                for p, o in pre_render
             }
             attrs = ["ul", {"id": "annotations", "style": "margin-left: -1rem;"}]
             for predicate, objs in object_hiccup.items():
