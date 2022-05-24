@@ -6,7 +6,12 @@ from html import escape as html_escape
 from typing import Tuple
 
 
-def clean_object(x):
+def clean_object(x: str):
+    """Clean the named object of a statement - this simply involves removing angle brackets on IRIs.
+
+    :param x: object to clean
+    :return: object with brackets stripped, if they exist
+    """
     if x.startswith("<") and x.endswith(">"):
         return x[1:-1]
     return x
@@ -33,7 +38,12 @@ def get_html_label(iri: str, labels: dict, predicate: str = None) -> list:
 
 
 def object2hiccup(
-    predicate, obj, labels, entity_types, as_list=False, include_annotations=False
+    predicate: str,
+    obj: dict,
+    labels: dict,
+    entity_types: dict,
+    as_list: bool = False,
+    include_annotations: bool = False,
 ) -> list:
     """Render an object as a hiccup-style list.
     
@@ -167,7 +177,18 @@ def pre_render_objects(data: dict) -> Tuple[dict, set]:
 
 def render_hiccup(
     predicate, objects, labels, entity_types, include_annotations=False, single_item_list=False
-):
+) -> list:
+    """Render the list of objects as a hiccup list for HTML/RDFa output.
+
+    :param predicate: predicate for these objects
+    :param objects: list of objects to render as hiccup list
+    :param labels: dict of ID -> term labels
+    :param entity_types: dict of ID -> term types
+    :param include_annotations: if True, include the annotations in the hiccup list
+    :param single_item_list: if True, render all objects as HTML ul elements even if there is only
+                             one object - otherwise, ul elements are only created for two+ objects
+    :return: hiccup list for given objects
+    """
     if len(objects) > 1 or single_item_list:
         lst = ["ul"]
         lst.extend(

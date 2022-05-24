@@ -6,6 +6,7 @@ from itertools import chain
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.sql.expression import text as sql_text
+from typing import Dict
 from .render import get_html_label, pre_render_objects, render_hiccup
 from .sql import (
     get_ancestor_hierarchy,
@@ -32,7 +33,13 @@ from .style import (
 )
 
 
-def get_individuals_by_type(conn: Connection, statement: str = "statement"):
+def get_individuals_by_type(conn: Connection, statement: str = "statement") -> Dict[list]:
+    """Return a dict of class -> list of individuals that are instances of that class.
+
+    :param conn: database connection
+    :param statement: name of ontology statement table
+    :return: class -> instances
+    """
     query = f"""SELECT DISTINCT subject FROM "{statement}"
             WHERE predicate = 'rdf:type' AND object = 'owl:NamedIndividual'"""
     results = conn.execute(query)
@@ -55,7 +62,13 @@ def get_sorted_predicates(
     conn: Connection, exclude_ids: list = None, statement: str = "statement"
 ) -> list:
     """Return a list of predicates IDs sorted by their label, optionally excluding some predicate
-    IDs. If the predicate does not have a label, use the ID as the label."""
+    IDs. If the predicate does not have a label, use the ID as the label.
+
+    :param conn: database connection
+    :param exclude_ids: list of IDs to exclude from predicates
+    :param statement: name of ontology statement table
+    :return: list of predicate labels in sorted order
+    """
     query = f"""WITH labels AS (
         SELECT DISTINCT subject, object
         FROM "{statement}" WHERE predicate = 'rdfs:label'
@@ -76,14 +89,19 @@ def get_sorted_predicates(
     sorted_predicates = [
         k for k, v in sorted(predicate_label_map.items(), key=lambda x: x[1].lower())
     ]
-    if "dct:title" in sorted_predicates:
-        # put ontology title at the start of list
-        sorted_predicates.remove("dct:title")
-        sorted_predicates.insert(0, "dct:title")
     return sorted_predicates
 
 
-def get_top_hierarchy(conn: Connection, entity_type: str, statement: str = "statement"):
+def get_top_hierarchy(
+    conn: Connection, entity_type: str, statement: str = "statement"
+) -> Dict[list]:
+    """Get the hierarchy starting at a "top" entity.
+
+    :param conn: database connection
+    :param entity_type: type of entity to get direct hierarchy under
+    :param statement: name of ontology statement table
+    :return: dict of parent -> list of children
+    """
     top_level = entity_type
     if entity_type == "owl:Class":
         top_level = "owl:Thing"
@@ -133,7 +151,16 @@ def get_top_hierarchy(conn: Connection, entity_type: str, statement: str = "stat
     return descendants
 
 
-def parent2tree(treedata: dict, selected_term: str, selected_children: list, node: str):
+def parent2tree(treedata: dict, selected_term: str, selected_children: list, node: str) -> list:
+    """Starting at a selected term, go up the hierarchy of ancestors and create a HTML "tree"
+    structure as a hiccup list.
+
+    :param treedata: data for the terms
+    :param selected_term: term to create hierarchy for
+    :param selected_children: children of term
+    :param node: current node in hierarchy
+    :return: hiccup list for hierarchy
+    """
     # Remap these parents to the top tree "parent", which is the entity type
     if node == "owl:Thing":
         node = "owl:Class"
@@ -194,6 +221,16 @@ def term2rdfa(
     statement: str = "statement",
     title: str = None,
 ):
+    """Render the term as HTML/RDFa hiccup list.
+
+    :param conn: database connection
+    :param term_id: term to render
+    :param predicate_ids: predicates to include
+    :param max_children: maximum number of children to display
+    :param statement: name of ontology statement table
+    :param title: ontology title
+    :return: hiccup list for term tree + annotations
+    """
     # Get the prefixes for converting CURIEs to IRIs
     prefixes = get_prefixes(conn)
 
@@ -293,7 +330,9 @@ def term2rdfa(
         term_iri = get_iri(prefixes, term_id)
         if pre_render:
             # Order the pre-render by predicates as determined by predicate_ids
-            pre_render = sorted(pre_render[term_id].items(), key=lambda x: predicate_ids.index(x[0]))
+            pre_render = sorted(
+                pre_render[term_id].items(), key=lambda x: predicate_ids.index(x[0])
+            )
             object_hiccup = {
                 p: render_hiccup(
                     p, o, labels, entity_types, include_annotations=True, single_item_list=True
@@ -326,7 +365,14 @@ def term2rdfa(
     return term
 
 
-def term2tree(treedata: dict, term_id: str, max_children: int = 100):
+def term2tree(treedata: dict, term_id: str, max_children: int = 100) -> list:
+    """Render the term as a hiccup tree with ancestors and direct children.
+
+    :param treedata: data for this term
+    :param term_id: "selected" term
+    :param max_children: maximum number of children to display under selected term
+    :return: hiccup list rendering of hierarchy
+    """
     # Sort children based on label - obsolete last
     children = [
         x for x in treedata["descendants"].get(term_id, []) if x not in treedata["obsolete"]
@@ -424,6 +470,20 @@ def tree(
     statement: str = "statement",
     title: str = None,
 ) -> str:
+    """Render the given term as an HTML/RDFa tree + details.
+
+    :param conn: database connection
+    :param term_id: term to display
+    :param db_query_param:
+    :param href: URL pattern for links to other terms, where {curie} is replaced with the term ID
+    :param include_search: if True, include a search bar at the top of the page
+    :param max_children: maximum number of children to display under term
+    :param predicate_ids: predicates to include in term details on right side of page
+    :param standalone: if True, include HTML headers
+    :param statement: name of ontology statement table
+    :param title: ontology title to be displayed on page
+    :return: HTML/RDFa string
+    """
     body = []
     if not term_id:
         t = term2rdfa(
@@ -562,9 +622,14 @@ def tree(
     return render(html)
 
 
-def tree_label(treedata: dict, s: str) -> list:
-    """Retrieve the hiccup-style vector label of a term."""
-    label = treedata["labels"].get(s, s)
-    if s in treedata["obsolete"]:
+def tree_label(treedata: dict, term_id: str) -> list:
+    """Retrieve the hiccup-style vector label of a term.
+
+    :param treedata: data for relevant terms
+    :param term_id: term to get label of
+    :return: hiccup list for term label
+    """
+    label = treedata["labels"].get(term_id, term_id)
+    if term_id in treedata["obsolete"]:
         return ["s", label]
     return label

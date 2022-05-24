@@ -9,7 +9,11 @@ from typing import Union
 
 
 def get_connection(path: str) -> Union[Connection, None]:
-    """"""
+    """Get a database connection from either a SQLite database file, or a PostgreSQL config.
+
+    :param path: path to database or config file
+    :return: database connection or None on problem loading config file
+    """
     if path.endswith(".db"):
         abspath = os.path.abspath(path)
         db_url = "sqlite:///" + abspath
@@ -57,7 +61,12 @@ def get_connection(path: str) -> Union[Connection, None]:
 
 
 def get_terms(term_list: list, terms_file: str) -> list:
-    """Get a list of terms from a list and/or a file from args."""
+    """Get a list of terms from a list and/or a file from args.
+
+    :param term_list: list of input terms
+    :param terms_file: path to file containing input terms
+    :return: list of terms
+    """
     terms = term_list or []
     if terms_file:
         with open(terms_file, "r") as f:

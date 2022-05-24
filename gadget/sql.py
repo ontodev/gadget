@@ -19,8 +19,12 @@ TOP_LEVELS = {
 }
 
 
-def escape(curie) -> str:
-    """Escape illegal characters in the local ID portion of a CURIE"""
+def escape(curie: str) -> str:
+    """Escape illegal characters in the local ID portion of a CURIE
+
+    :param curie: CURIE to escape
+    :return escaped CURIE
+    """
     prefix = curie.split(":")[0]
     local_id = curie.split(":")[1]
     local_id_fixed = re.sub(r"(?<!\\)([~!$&'()*+,;=/?#@%])", r"\\\1", local_id)
@@ -28,7 +32,11 @@ def escape(curie) -> str:
 
 
 def escape_qnames(conn: Connection, table: str):
-    """Update CURIEs with illegal QName characters in the local ID by escaping those characters."""
+    """Update CURIEs with illegal QName characters in the local ID by escaping those characters.
+
+    :param conn: database connection
+    :param table: table name to escape QNames in
+    """
     for keyword in ["subject", "predicate", "object"]:
         query = f"SELECT DISTINCT {keyword} FROM \"{table}\" WHERE {keyword} NOT LIKE '<%%>'"
         if keyword == "object":
@@ -95,7 +103,14 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
     return ancestors
 
 
-def get_children(conn: Connection, term_id: str, statement: str = "statement"):
+def get_children(conn: Connection, term_id: str, statement: str = "statement") -> list:
+    """Return a list of children of the given term_id
+
+    :param conn: database connection
+    :param term_id: term to get children of
+    :param statement: name of ontology statement table
+    :return: list of children of given term
+    """
     query = sql_text(
         f"""SELECT DISTINCT subject FROM "{statement}"
         WHERE object = :term_id AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')"""
@@ -112,7 +127,8 @@ def get_descendant_hierarchy(
     :param conn: database connection
     :param term_ids: list of terms to get descendants of
     :param statement: name of ontology statement table
-    :return dict of parent -> list of children"""
+    :return dict of parent -> list of children
+    """
     values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
     query = (
         "WITH RECURSIVE descendants(child, parent) AS (VALUES "
@@ -158,7 +174,8 @@ def get_descendants(conn: Connection, term_id: str, statement: str = "statements
 
     :param conn: database connection
     :param term_id: term to get descendants of
-    :param statement: name of ontology statement table"""
+    :param statement: name of ontology statement table
+    """
     query = sql_text(
         f"""WITH RECURSIVE descendants(node) AS (
             VALUES (:term_id)
@@ -182,6 +199,13 @@ def get_descendants(conn: Connection, term_id: str, statement: str = "statements
 def get_entity_types(
     conn: Connection, term_ids: List[str], statement="statement"
 ) -> Dict[str, set]:
+    """Return a dict of term_id -> all rdf:type objects for a collection of terms.
+
+    :param conn: database connection
+    :param term_ids: terms to get types of
+    :param statement: name of ontology statement table
+    :return: dict of term_id -> types
+    """
     query = sql_text(
         f"""SELECT DISTINCT subject, object FROM "{statement}"
             WHERE subject IN :term_ids AND predicate = 'rdf:type'"""
@@ -385,7 +409,13 @@ def get_objects(
     return term_objects
 
 
-def get_ontology_iri(conn, statement="statement"):
+def get_ontology_iri(conn: Connection, statement: str = "statement") -> Union[str, None]:
+    """Get the ontology IRI.
+
+    :param conn: database connection
+    :param statement: name of ontology statement table
+    :return: ontology IRI, or None
+    """
     res = conn.execute(
         f"""SELECT subject FROM "{statement}"
                 WHERE predicate = 'rdf:type' AND object = 'owl:Ontology'"""
@@ -396,8 +426,17 @@ def get_ontology_iri(conn, statement="statement"):
 
 
 def get_ontology_title(
-    conn: Connection, prefixes: dict, term_id: str, statement: str = "statement"
-):
+    conn: Connection, prefixes: dict, ontology_id: str, statement: str = "statement"
+) -> Union[str, None]:
+    """Get the ontology title, which is the value of the http://purl.org/dc/elements/1.1/title
+    predicate.
+
+    :param conn: database connection
+    :param prefixes: dict of prefix->base
+    :param ontology_id: ontology IRI (or ID)
+    :param statement: name of ontology statement table
+    :return: ontology title, or None
+    """
     # Maybe get an ontology title from dce:title property
     # People often use different prefixes for this, so check for what is used
     bases = {v: k for k, v in prefixes.items()}
@@ -411,7 +450,7 @@ def get_ontology_title(
             f"""SELECT object FROM "{statement}"
             WHERE subject = :ontology AND predicate = :predicate"""
         ),
-        ontology=term_id,
+        ontology=ontology_id,
         predicate=title_predicate,
     ).fetchone()
     if res:
@@ -420,7 +459,13 @@ def get_ontology_title(
 
 
 def get_parents(conn: Connection, term_id: str, statement: str = "statement") -> set:
-    """Return a set of parents for a given term ID."""
+    """Return a set of parents for a given term ID.
+
+    :param conn: database connection
+    :param term_id: term to get parents of
+    :param statement: name of ontology statement table
+    :return set of parents
+    """
     query = sql_text(
         f"""SELECT DISTINCT object FROM "{statement}"
             WHERE subject = :term_id
@@ -432,6 +477,11 @@ def get_parents(conn: Connection, term_id: str, statement: str = "statement") ->
 
 
 def get_prefixes(conn: Connection) -> dict:
+    """Get the prefixes as a dict of prefix->base from a database. The table is always 'prefix'.
+
+    :param conn: database connection
+    :return: dict of prefixes
+    """
     results = conn.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
     return {res["prefix"]: res["base"] for res in results}
 
@@ -453,11 +503,17 @@ def get_iri(prefixes: dict, term_id: str) -> str:
     return namespace + local_id
 
 
-def get_top_entity_type(conn: Connection, term_id: str, statements="statements") -> str:
-    """Get a single OWL entity type for a term. This will not include the types of named inviduals,
-    rather a named individual will have the type owl:Individual."""
+def get_top_entity_type(conn: Connection, term_id: str, statement="statement") -> str:
+    """Get a single OWL entity type for a term. This will not include types of named individuals,
+    rather a named individual will have the type owl:Individual.
+
+    :param conn: database connection
+    :param term_id: term to get type of
+    :param statement: name of ontology statement table
+    :return entity type for term
+    """
     query = sql_text(
-        f"SELECT object FROM \"{statements}\" WHERE subject = :term_id AND predicate = 'rdf:type'"
+        f"SELECT object FROM \"{statement}\" WHERE subject = :term_id AND predicate = 'rdf:type'"
     )
     results = list(conn.execute(query, term_id=term_id))
     if len(results) > 1:
@@ -473,7 +529,7 @@ def get_top_entity_type(conn: Connection, term_id: str, statements="statements")
     else:
         # Check if this is used as a subClass or subProperty
         entity_type = None
-        query = sql_text(f'SELECT predicate FROM "{statements}" WHERE subject = :term_id')
+        query = sql_text(f'SELECT predicate FROM "{statement}" WHERE subject = :term_id')
         results = conn.execute(query, term_id=term_id)
         preds = [row["predicate"] for row in results]
         if "rdfs:subClassOf" in preds:
@@ -482,7 +538,7 @@ def get_top_entity_type(conn: Connection, term_id: str, statements="statements")
             return "owl:AnnotationProperty"
         if not entity_type:
             # Check if this is used as a parent property or parent class
-            query = sql_text(f"SELECT predicate FROM {statements} WHERE object = :term_id")
+            query = sql_text(f'SELECT predicate FROM "{statement}" WHERE object = :term_id')
             results = conn.execute(query, term_id=term_id)
             preds = [row["predicate"] for row in results]
             if "rdfs:subClassOf" in preds:
@@ -492,7 +548,12 @@ def get_top_entity_type(conn: Connection, term_id: str, statements="statements")
     return "owl:Class"
 
 
-def validate_table(conn, statement):
+def validate_table(conn: Connection, statement: str):
+    """Check that the table exists and is in correct LDTab format. If it is not, raise an Error.
+
+    :param conn: database connection
+    :param statement: name of ontology statement table
+    """
     # First validate that the table actually exists
     # this also ensures that the table name is safe before we use it in f-strings
     if str(conn.engine.url).startswith("sqlite"):

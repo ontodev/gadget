@@ -100,7 +100,7 @@ def dicts2rdfa(rendered_data: list, headers: list, prefixes: dict, standalone: b
     :param headers: list of headers for output
     :param prefixes: dict of prefix -> base
     :param standalone: if True, include HTML root & headers
-    :return:
+    :return: rendered HTML/RDFa string
     """
     thead = [["th", h] for h in headers]
     thead.insert(0, "tr")
@@ -195,7 +195,8 @@ def export(
                           rendered in the default_value_format
     :return: string output in given format
     """
-    # We only need to get prefixes if we need to render any IRIs, or if fmt is HTML (prefixes needed for RDFa)
+    # We only need to get prefixes if we need to render any IRIs, or if fmt is HTML
+    # (prefixes needed for RDFa)
     prefixes = {}
     if (
         fmt == "html"
@@ -361,7 +362,7 @@ def export(
     return json.dumps(rendered, indent=2)
 
 
-def get_iri(prefixes, curie):
+def get_iri(prefixes: dict, curie: str):
     """Get the full IRI for a CURIE.
 
     :param prefixes: dict of prefix -> base
@@ -378,7 +379,9 @@ def get_iri(prefixes, curie):
     return curie.replace(prefix + ":", base)
 
 
-def replace_predicate_ids(data, headers, prefixes, predicate_labels, rdfa: bool = False):
+def replace_predicate_ids(
+    data: list, headers: list, prefixes: dict, predicate_labels: dict, rdfa: bool = False
+):
     """Replace the predicate IDs with the provided headers for the export output. These may be what
     was originally passed in, or the predicates rendered in the value format (IRI, CURIE, or LABEL).
 
@@ -436,20 +439,22 @@ def terms2dicts(
     statement: str = "statement",
     value_formats: dict = None,
 ):
-    """
+    """Convert each term detail object to a dict of predicate -> rendered object
+    (either dict with value & annotation or hiccup list).
 
-    :param conn:
-    :param data:
-    :param default_value_format:
-    :param include_annotations:
-    :param include_id:
-    :param prefixes:
+    :param conn: database connection
+    :param data: term detail data
+    :param default_value_format: default format to render terms (LABEL, CURIE, IRI)
+    :param include_annotations: if True, include the annotations on predicate-object pairs
+    :param include_id: if True, include an "ID" field in each term dict
+    :param prefixes: dict of prefix->base
     :param rdfa: if True, render values as hiccup-style RDFa lists
-    :param sep:
-    :param single_item_list:
-    :param statement:
-    :param value_formats: dict of predicate ID to the format to use for values (label, CURIE, IRI)
-    :return:
+    :param sep: character to separate multiple values for a single predicate
+    :param single_item_list: if True, render objects as hiccup lists even if there is only one
+                             element. Otherwise, we will only render a list for two or more objects.
+    :param statement: name of ontology statement table
+    :param value_formats: dict of predicate ID to the format to use for values (LABEL, CURIE, IRI)
+    :return: list of term dicts with rendered objects
     """
     if not value_formats:
         value_formats = {}

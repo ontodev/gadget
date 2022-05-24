@@ -187,11 +187,12 @@ def clean(conn: Connection, extract_table: str = None):
     """Remove temporary tables and, if included, the extract table.
 
     :param conn: database connection
-    :param extract_table: name of extract table - if included, this table will be dropped"""
+    :param extract_table: name of extract table - if included, this table will be dropped
+    """
     conn.execute("DROP TABLE IF EXISTS tmp_terms")
     conn.execute("DROP TABLE IF EXISTS tmp_predicates")
     if extract_table:
-        # TODO: warn or fail if table alraedy exists?
+        # TODO: warn or fail if table already exists?
         conn.execute(f'DROP TABLE IF EXISTS "{extract_table}"')
 
 
@@ -219,7 +220,8 @@ def create_tables(
     :param imported_from: IRI of ontology that these terms are imported from
     :param imported_from_property: predicate to use with imported_from (IAO:0000412)
     :param no_hierarchy: if True, do not assert parents unless an override parent is included
-    :param statement: name of ontology statement table to extract from"""
+    :param statement: name of ontology statement table to extract from
+    """
 
     # Create the terms table containing parent -> child relationships
     conn.execute("CREATE TABLE tmp_terms(child TEXT, parent TEXT)")
@@ -425,7 +427,21 @@ def extract(
     statement: str = "statement",
     terms: dict = None,
 ):
-    """Extract terms from the ontology database and return the module as Turtle or JSON-LD."""
+    """Extract terms from the ontology database and create the extract module as a new table in the
+    same database.
+
+    :param conn: database connection
+    :param extract_table: name of table to put extracted module in
+    :param copy_predicates: list of tuples (from, to) to copy values to a different predicate
+    :param imported_from: IRI of ontology that these terms are imported from
+    :param imported_from_property: predicate to use with imported_from (IAO:0000412)
+    :param intermediates: intermediate entities to include from ancestor/descendant relation
+                          ('all' or 'none')
+    :param no_hierarchy: if True, do not assert parents unless an override parent is included
+    :param predicates: list of predicates to include on extracted terms
+    :param statement: name of ontology statement table to extract from
+    :param terms: list of terms to extract
+    """
     intermediates = intermediates.lower()
     if intermediates not in ["all", "none"]:
         raise Exception("Unknown 'intermediates' option: " + intermediates)
@@ -468,13 +484,14 @@ def extract(
     escape_qnames(conn, extract_table)
 
 
-def get_all_descendants(hierarchy: dict, term_id: str, descendants: set = None):
+def get_all_descendants(hierarchy: dict, term_id: str, descendants: set = None) -> set:
     """Get a set of all descendants for a term.
 
     :param hierarchy: dict of parent -> list of children
     :param term_id: term to get the descedants of (recursive)
     :param descendants: set to add descendants to
-    :return set of all descendants"""
+    :return set of all descendants
+    """
     if not descendants:
         descendants = set()
     children = hierarchy.get(term_id, [])
@@ -570,7 +587,8 @@ def get_related_entities(
     :param intermediates: intermediate entities to include from ancestor/descendant relation
                           ('all' or 'none')
     :param statement: name of ontology statement table
-    :return set of extra terms to add to extracted module"""
+    :return set of extra terms to add to extracted module
+    """
     # First pass to get collect terms that we need hierarchies for (ancestors/descendants)
     # so that we can get the full hierarchies all at once to save time
     ancestor_hierarchy_terms = []
@@ -654,7 +672,8 @@ def get_top_ancestors(
     :param remove_redundancy: if True, pass through ancestors set to remove ancestors-of-ancestors
     :param top_ancestors: set to collect top ancestors in
     :param top_terms: set of terms to consider as top ancestors
-    :return set of top ancestors"""
+    :return set of top ancestors
+    """
     if not top_ancestors:
         top_ancestors = set()
 
