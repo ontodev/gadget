@@ -10,7 +10,7 @@ from typing import Dict
 from .render import get_html_label, pre_render_objects, render_hiccup
 from .sql import (
     get_ancestor_hierarchy,
-    get_descendant_hierarchy,
+    get_grandchild_hierarchy,
     get_entity_types,
     get_iri,
     get_labels,
@@ -247,7 +247,7 @@ def term2rdfa(
         term_id = get_ontology_iri(conn, statement=statement)
         ontology_title = get_ontology_title(conn, prefixes, term_id, statement=statement)
     else:
-        descendants = get_descendant_hierarchy(conn, [term_id], statement=statement)
+        descendants = get_grandchild_hierarchy(conn, [term_id], statement=statement)
         ancestors = get_ancestor_hierarchy(conn, [term_id], statement=statement)
 
     # Get the attributes (annotations, logic) of our term

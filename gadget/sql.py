@@ -118,6 +118,42 @@ def get_children(conn: Connection, term_id: str, statement: str = "statement") -
     results = conn.execute(query, term_id=term_id)
     return [x["subject"] for x in results]
 
+def get_child_hierarchy(
+    conn: Connection, term_ids: list, statement: str = "statement"
+) -> dict:
+    """Get the children as a dict of parent -> list of children for a list of terms.
+
+    :param conn: database connection
+    :param term_ids: list of terms to get descendants of
+    :param statement: name of ontology statement table
+    :return dict of parent -> list of children
+    """
+    query = f"""SELECT DISTINCT subject, object FROM "{statement}"
+        WHERE object IN :term_ids AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')"""
+    query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
+    results = conn.execute(query, term_ids=term_ids)
+    descendants = defaultdict(list)
+    for res in results:
+        descendants[res["object"]].append(res["subject"])
+    return descendants
+
+def get_grandchild_hierarchy(
+    conn: Connection, term_ids: list, statement: str = "statement"
+) -> dict:
+    """Get the children and grandchildren as a dict of parent -> list of children for a list of terms.
+
+    :param conn: database connection
+    :param term_ids: list of terms to get descendants of
+    :param statement: name of ontology statement table
+    :return dict of parent -> list of children
+    """
+    descendants = get_child_hierarchy(conn, term_ids, statement=statement)
+    children = []
+    for value in descendants.values():
+        children += value
+    descendants.update(get_child_hierarchy(conn, children, statement=statement))
+    print(descendants)
+    return descendants
 
 def get_descendant_hierarchy(
     conn: Connection, term_ids: list, statement: str = "statement"
