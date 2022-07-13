@@ -152,7 +152,6 @@ def get_grandchild_hierarchy(
     for value in descendants.values():
         children += value
     descendants.update(get_child_hierarchy(conn, children, statement=statement))
-    print(descendants)
     return descendants
 
 def get_descendant_hierarchy(
