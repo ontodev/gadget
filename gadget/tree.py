@@ -69,21 +69,21 @@ def get_sorted_predicates(
     :param statement: name of ontology statement table
     :return: list of predicate labels in sorted order
     """
-    query = f"""WITH labels AS (
-        SELECT DISTINCT subject, object
-        FROM "{statement}" WHERE predicate = 'rdfs:label'
-    )
-    SELECT DISTINCT predicate AS subject, labels.object AS object
-    FROM "{statement}" s
-    LEFT JOIN labels ON predicate = labels.subject WHERE predicate NOT NULL """
-    if exclude_ids:
-        exclude = ", ".join([f"'{x}'" for x in exclude_ids])
-        query += " AND predicate NOT IN :exclude"
-        query = sql_text(query).bindparams(bindparam("exclude", expanding=True))
-        results = conn.execute(query, exclude=exclude)
-    else:
-        results = conn.execute(query)
-    predicate_label_map = {res["subject"]: res["object"] or res["subject"] for res in results}
+    query = f"""SELECT DISTINCT predicate FROM "{statement}" WHERE predicate NOT IN :exclude_ids"""
+    query = sql_text(query).bindparams(bindparam("exclude_ids", expanding=True))
+    results = conn.execute(query, exclude_ids=exclude_ids)
+    predicates = [r["predicate"] for r in results]
+
+    query = f"""SELECT subject, object FROM "{statement}" WHERE subject IN :predicates AND predicate = 'rdfs:label' """
+    query = sql_text(query).bindparams(bindparam("predicates", expanding=True))
+    results = conn.execute(query, predicates=predicates)
+    predicate_label_map = {}
+    for predicate in predicates:
+        predicate_label_map[predicate] = predicate # default to just the ID
+        for result in results:
+            if result["subject"] == predicate:
+                predicate_label_map[predicate] = result["object"]
+                break
 
     # Return list of keys sorted by value (label)
     sorted_predicates = [
