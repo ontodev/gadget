@@ -33,7 +33,7 @@ from .style import (
 )
 
 
-def get_individuals_by_type(conn: Connection, statement: str = "statement") -> Dict[list]:
+def get_individuals_by_type(conn: Connection, statement: str = "statement") -> Dict[str, list]:
     """Return a dict of class -> list of individuals that are instances of that class.
 
     :param conn: database connection
@@ -94,7 +94,7 @@ def get_sorted_predicates(
 
 def get_top_hierarchy(
     conn: Connection, entity_type: str, statement: str = "statement"
-) -> Dict[list]:
+) -> Dict[str, list]:
     """Get the hierarchy starting at a "top" entity.
 
     :param conn: database connection
