@@ -10,6 +10,7 @@ from typing import Dict
 from .render import get_html_label, pre_render_objects, render_hiccup
 from .sql import (
     get_ancestor_hierarchy,
+    get_child_hierarchy,
     get_grandchild_hierarchy,
     get_entity_types,
     get_iri,
@@ -113,42 +114,15 @@ def get_top_hierarchy(
         elif entity_type == "owl:ObjectProperty":
             top_level = "owl:topObjectProperty"
     query = sql_text(
-        f"""WITH descendants(parent, child) AS (
-            SELECT
-                :entity_type AS parent,
-                subject AS child
-            FROM "{statement}"
-            -- find the subjects of this type that do not have a parent
-            WHERE subject IN 
-                (SELECT subject FROM "{statement}" WHERE predicate = 'rdf:type' AND object = :entity_type)
-                AND subject NOT IN (SELECT subject FROM "{statement}" WHERE predicate = :predicate)
-                AND subject IS NOT :top_level
-            UNION
-            -- and the subjects that are direct children of the top-level (support for owl:Thing)
-            SELECT
-                :entity_type AS parent,
-                subject AS child
-            FROM "{statement}"
-            WHERE predicate = :predicate AND object = :top_level
-            UNION
-            -- fill in the table with the non-blank descendants of all top level terms
-            SELECT
-                "{statement}".object AS parent,
-                "{statement}".subject AS child
-            FROM "{statement}", descendants
-            WHERE descendants.child = "{statement}".object
-                AND "{statement}".predicate = :predicate
-                AND "{statement}".datatype = '_IRI'
-        )
-        SELECT * FROM descendants;"""
+        f"""SELECT subject FROM "{statement}" WHERE predicate = 'rdf:type' AND object = :entity_type
+            EXCEPT SELECT subject FROM "{statement}" WHERE predicate = :predicate
+            UNION SELECT subject FROM "{statement}" WHERE predicate = :predicate AND object = :top_level"""
     )
     results = conn.execute(query, entity_type=entity_type, predicate=predicate, top_level=top_level)
-    descendants = defaultdict(list)
-    for res in results:
-        if res["parent"] not in descendants:
-            descendants[res["parent"]] = []
-        descendants[res["parent"]].append(res["child"])
-    return descendants
+    top = [r["subject"] for r in results]
+    children = get_child_hierarchy(conn, top, statement=statement)
+    children[entity_type] = top
+    return(children)
 
 
 def parent2tree(treedata: dict, selected_term: str, selected_children: list, node: str) -> list:
