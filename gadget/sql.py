@@ -131,10 +131,11 @@ def get_child_hierarchy(
     query = f"""SELECT DISTINCT subject, object FROM "{statement}"
         WHERE object IN :term_ids AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')"""
     query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
-    results = conn.execute(query, term_ids=term_ids)
     descendants = defaultdict(list)
-    for res in results:
-        descendants[res["object"]].append(res["subject"])
+    if term_ids:
+        results = conn.execute(query, term_ids=term_ids)
+        for res in results:
+            descendants[res["object"]].append(res["subject"])
     return descendants
 
 def get_grandchild_hierarchy(
@@ -245,13 +246,15 @@ def get_entity_types(
         f"""SELECT DISTINCT subject, object FROM "{statement}"
             WHERE subject IN :term_ids AND predicate = 'rdf:type'"""
     ).bindparams(bindparam("term_ids", expanding=True))
-    results = conn.execute(query, term_ids=term_ids).fetchall()
+
     all_types = defaultdict(list)
-    for res in results:
-        term_id = res["subject"]
-        if term_id not in all_types:
-            all_types[term_id] = list()
-        all_types[term_id].append(res["object"])
+    if term_ids:
+        results = conn.execute(query, term_ids=term_ids).fetchall()
+        for res in results:
+            term_id = res["subject"]
+            if term_id not in all_types:
+                all_types[term_id] = list()
+            all_types[term_id].append(res["object"])
 
     entity_types = {}
     for term_id, e_types in all_types.items():
@@ -423,15 +426,16 @@ def get_objects(
     query = sql_text(query).bindparams(bindparam("predicates", expanding=True))
 
     results = []
-    if term_ids:
+    if term_ids and predicate_ids:
         # Use chunks to get around max SQL variables
         chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             const_dict["terms"] = chunk
+            # print(f"CHUNK {i}: {chunk}\nCONST_DICT: {const_dict}")
             query = query.bindparams(bindparam("terms", expanding=True))
             results.extend(conn.execute(query, const_dict).fetchall())
-    else:
-        results.extend(conn.execute(query, const_dict).fetchall())
+    #else:
+    #    results.extend(conn.execute(query, const_dict).fetchall())
 
     for res in results:
         s = res["subject"]
