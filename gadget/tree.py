@@ -114,9 +114,22 @@ def get_top_hierarchy(
         elif entity_type == "owl:ObjectProperty":
             top_level = "owl:topObjectProperty"
     query = sql_text(
-        f"""SELECT subject FROM "{statement}" WHERE predicate = 'rdf:type' AND object = :entity_type
-            EXCEPT SELECT subject FROM "{statement}" WHERE predicate = :predicate
-            UNION SELECT subject FROM "{statement}" WHERE predicate = :predicate AND object = :top_level"""
+        f"""SELECT s1.subject
+            FROM "{statement}" s1
+            WHERE s1.predicate = 'rdf:type'
+              AND s1.object = :entity_type
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "{statement}" s2
+                WHERE s2.subject = s1.subject
+                  AND s2.predicate = :predicate
+              )
+            UNION
+            SELECT subject
+            FROM "{statement}"
+            WHERE predicate = :predicate
+            AND object = :top_level
+        """
     )
     results = conn.execute(query, entity_type=entity_type, predicate=predicate, top_level=top_level)
     top = [r["subject"] for r in results]
