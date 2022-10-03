@@ -74,16 +74,16 @@ def get_sorted_predicates(
     # SELECT DISTINCT predicate FROM "{statement}" WHERE predicate NOT IN :exclude_ids
     query = f"""
     WITH RECURSIVE "t" AS (
-       SELECT min("predicate") AS "predicate"
+       SELECT MIN("predicate") AS "predicate"
        FROM "{statement}"
        UNION ALL
-       SELECT (SELECT min("predicate") FROM "{statement}" WHERE "predicate" > "t"."predicate")
+       SELECT (SELECT MIN("predicate") FROM "{statement}" WHERE "predicate" > "t"."predicate")
        FROM "t"
        WHERE "t"."predicate" IS NOT NULL
     )
     SELECT "predicate" FROM "t" WHERE "predicate" IS NOT NULL AND "predicate" NOT IN :exclude_ids
     UNION ALL
-    SELECT null WHERE EXISTS(SELECT 1 FROM "{statement}" WHERE "predicate" IS NULL);
+    SELECT NULL WHERE EXISTS(SELECT 1 FROM "{statement}" WHERE "predicate" IS NULL);
     """
     query = sql_text(query).bindparams(bindparam("exclude_ids", expanding=True))
     results = conn.execute(query, exclude_ids=exclude_ids)
