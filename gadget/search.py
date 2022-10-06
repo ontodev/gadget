@@ -30,9 +30,11 @@ def search(
             WHERE LOWER(label) LIKE :search_text"""
     results = []
     if term_ids:
-        query += " AND subject IN :term_ids ORDER BY LENGTH(label)"
+        query += " AND subject IN :term_ids"
         if limit:
             query += f" LIMIT {limit}"
+
+        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY LENGTH(label)"
         query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
         # Use chunks to get around max SQL variables
         chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
@@ -43,9 +45,9 @@ def search(
                 ).fetchall()
             )
     else:
-        query += " ORDER BY LENGTH(label)"
         if limit:
             query += f" LIMIT {limit}"
+        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY LENGTH(label)"
         results = conn.execute(sql_text(query), search_text=f"%%{search_text.lower()}%%").fetchall()
     return [
         {"id": res["subject"], "label": res["label"], "order": i}
