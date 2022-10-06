@@ -62,7 +62,7 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
     """
 
     if str(conn.engine.url).startswith("sqlite"):
-        grandparents_sql = f"""
+        parents_of_parents_sql = f"""
         SELECT object AS parent, subject AS child
         FROM "{statement}"
         WHERE object IN (SELECT subject FROM "{statement}"
@@ -70,7 +70,7 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
                          AND object IN :term_ids)
         """
     else:
-        grandparents_sql = f"""
+        parents_of_parents_sql = f"""
         SELECT object AS parent, subject AS child
         FROM "{statement}"
         WHERE object = ANY(
@@ -102,7 +102,7 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
         UNION
 
         --- Parents of the parents of the given terms
-        {grandparents_sql}
+        {parents_of_parents_sql}
 
         AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
         AND datatype = '_IRI'
