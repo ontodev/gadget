@@ -34,7 +34,7 @@ def search(
         if limit:
             query += f" LIMIT {limit}"
 
-        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY LENGTH(label)"
+        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY label"
         query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
         # Use chunks to get around max SQL variables
         chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
@@ -47,7 +47,7 @@ def search(
     else:
         if limit:
             query += f" LIMIT {limit}"
-        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY LENGTH(label)"
+        query = f"SELECT subject, label FROM ({query}) AS t ORDER BY label"
         results = conn.execute(sql_text(query), search_text=f"%%{search_text.lower()}%%").fetchall()
     return [
         {"id": res["subject"], "label": res["label"], "order": i}
