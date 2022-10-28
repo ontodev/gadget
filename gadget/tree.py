@@ -20,6 +20,7 @@ from .sql import (
     get_ontology_title,
     get_prefixes,
     TOP_LEVELS,
+    MAX_SQL_VARS,
 )
 from .style import (
     BOOTSTRAP_CSS,
@@ -245,13 +246,16 @@ def term2rdfa(
     entity_types = get_entity_types(conn, term_ids, statement=statement)
 
     # Get obsolete terms
-    query = sql_text(
-        f"""SELECT subject FROM "{statement}"
-        WHERE subject IN :term_ids
-          AND predicate = "owl:deprecated"
-          AND LOWER(object) = "true";"""
-    ).bindparams(bindparam("term_ids", expanding=True))
-    obsolete = [res["subject"] for res in conn.execute(query, term_ids=list(term_ids)).fetchall()]
+    obsolete = []
+    chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+    for chunk in chunks:
+        query = sql_text(
+            f"""SELECT subject FROM "{statement}"
+            WHERE subject IN :term_ids
+              AND predicate = 'owl:deprecated'
+              AND LOWER(object) = 'true';"""
+        ).bindparams(bindparam("term_ids", expanding=True))
+        obsolete += [res["subject"] for res in conn.execute(query, term_ids=list(chunk)).fetchall()]
 
     treedata = {
         "ancestors": ancestors,
