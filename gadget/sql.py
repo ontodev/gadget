@@ -61,6 +61,34 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
     :param statement: name of the ontology statement table
     :return: dict of child -> set of parents
     """
+
+    if str(conn.engine.url).startswith("sqlite"):
+        parents_of_parents_sql = f"""
+        SELECT object AS parent, subject AS child
+        FROM "{statement}"
+        WHERE object IN (SELECT subject FROM "{statement}"
+                         WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+                         AND object IN :term_ids)
+        """
+    else:
+        parents_of_parents_sql = f"""
+        SELECT object AS parent, subject AS child
+        FROM "{statement}"
+        WHERE object = ANY(
+            (
+              SELECT ARRAY(
+                SELECT subject
+                FROM "{statement}"
+                WHERE predicate IN (
+                  'rdfs:subClassOf',
+                  'rdfs:subPropertyOf'
+                )
+                AND object IN :term_ids
+            )
+          )::TEXT[]
+        )
+        """
+
     values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
     query = (
         "WITH RECURSIVE ancestors(parent, child) AS (VALUES "
@@ -73,14 +101,12 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
           AND object IN :term_ids
           AND datatype = '_IRI'
         UNION
+
         --- Parents of the parents of the given terms
-        SELECT object AS parent, subject AS child
-        FROM "{statement}"
-        WHERE object IN (SELECT subject FROM "{statement}"
-                         WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-                         AND object IN :term_ids)
-          AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-          AND datatype = '_IRI'
+        {parents_of_parents_sql}
+
+        AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+        AND datatype = '_IRI'
         UNION
         -- The non-blank parents of all of the parent terms extracted so far:
         SELECT object AS parent, subject AS child
@@ -430,16 +456,17 @@ def get_objects(
     query = sql_text(query).bindparams(bindparam("predicates", expanding=True))
 
     results = []
-    if term_ids:
+    if term_ids and predicate_ids:
         # Use chunks to get around max SQL variables
         MAX = MAX_SQL_VARS - len(predicate_ids)
         chunks = [term_ids[i : i + MAX] for i in range(0, len(term_ids), MAX)]
         for i, chunk in enumerate(chunks):
             const_dict["terms"] = chunk
+            # print(f"CHUNK {i}: {chunk}\nCONST_DICT: {const_dict}")
             query = query.bindparams(bindparam("terms", expanding=True))
             results.extend(conn.execute(query, const_dict).fetchall())
-    else:
-        results.extend(conn.execute(query, const_dict).fetchall())
+    #else:
+    #    results.extend(conn.execute(query, const_dict).fetchall())
 
     for res in results:
         s = res["subject"]
