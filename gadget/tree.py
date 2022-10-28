@@ -70,7 +70,21 @@ def get_sorted_predicates(
     :param statement: name of ontology statement table
     :return: list of predicate labels in sorted order
     """
-    query = f"""SELECT DISTINCT predicate FROM "{statement}" WHERE predicate NOT IN :exclude_ids"""
+    # This is an optimized version of the query:
+    # SELECT DISTINCT predicate FROM "{statement}" WHERE predicate NOT IN :exclude_ids
+    query = f"""
+    WITH RECURSIVE "t" AS (
+       SELECT MIN("predicate") AS "predicate"
+       FROM "{statement}"
+       UNION ALL
+       SELECT (SELECT MIN("predicate") FROM "{statement}" WHERE "predicate" > "t"."predicate")
+       FROM "t"
+       WHERE "t"."predicate" IS NOT NULL
+    )
+    SELECT "predicate" FROM "t" WHERE "predicate" IS NOT NULL AND "predicate" NOT IN :exclude_ids
+    UNION ALL
+    SELECT NULL WHERE EXISTS(SELECT 1 FROM "{statement}" WHERE "predicate" IS NULL);
+    """
     query = sql_text(query).bindparams(bindparam("exclude_ids", expanding=True))
     results = conn.execute(query, exclude_ids=exclude_ids)
     predicates = [r["predicate"] for r in results]
@@ -114,9 +128,22 @@ def get_top_hierarchy(
         elif entity_type == "owl:ObjectProperty":
             top_level = "owl:topObjectProperty"
     query = sql_text(
-        f"""SELECT subject FROM "{statement}" WHERE predicate = 'rdf:type' AND object = :entity_type
-            EXCEPT SELECT subject FROM "{statement}" WHERE predicate = :predicate
-            UNION SELECT subject FROM "{statement}" WHERE predicate = :predicate AND object = :top_level"""
+        f"""SELECT s1.subject
+            FROM "{statement}" s1
+            WHERE s1.predicate = 'rdf:type'
+              AND s1.object = :entity_type
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "{statement}" s2
+                WHERE s2.subject = s1.subject
+                  AND s2.predicate = :predicate
+              )
+            UNION
+            SELECT subject
+            FROM "{statement}"
+            WHERE predicate = :predicate
+            AND object = :top_level
+        """
     )
     results = conn.execute(query, entity_type=entity_type, predicate=predicate, top_level=top_level)
     top = [r["subject"] for r in results]

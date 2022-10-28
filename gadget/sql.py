@@ -60,6 +60,34 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
     :param statement: name of the ontology statement table
     :return: dict of child -> set of parents
     """
+
+    if str(conn.engine.url).startswith("sqlite"):
+        parents_of_parents_sql = f"""
+        SELECT object AS parent, subject AS child
+        FROM "{statement}"
+        WHERE object IN (SELECT subject FROM "{statement}"
+                         WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+                         AND object IN :term_ids)
+        """
+    else:
+        parents_of_parents_sql = f"""
+        SELECT object AS parent, subject AS child
+        FROM "{statement}"
+        WHERE object = ANY(
+            (
+              SELECT ARRAY(
+                SELECT subject
+                FROM "{statement}"
+                WHERE predicate IN (
+                  'rdfs:subClassOf',
+                  'rdfs:subPropertyOf'
+                )
+                AND object IN :term_ids
+            )
+          )::TEXT[]
+        )
+        """
+
     values = ", ".join([f"('{term_id}', NULL)" for term_id in term_ids])
     query = (
         "WITH RECURSIVE ancestors(parent, child) AS (VALUES "
@@ -72,14 +100,12 @@ def get_ancestor_hierarchy(conn: Connection, term_ids: list, statement="statemen
           AND object IN :term_ids
           AND datatype = '_IRI'
         UNION
+
         --- Parents of the parents of the given terms
-        SELECT object AS parent, subject AS child
-        FROM "{statement}"
-        WHERE object IN (SELECT subject FROM "{statement}"
-                         WHERE predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-                         AND object IN :term_ids)
-          AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
-          AND datatype = '_IRI'
+        {parents_of_parents_sql}
+
+        AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')
+        AND datatype = '_IRI'
         UNION
         -- The non-blank parents of all of the parent terms extracted so far:
         SELECT object AS parent, subject AS child
