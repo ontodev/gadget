@@ -1,5 +1,5 @@
-flake8
+flake8==5.0.4
 hiccupy==1.0.0
-pytest
-SQLAlchemy
-tabulate
+pytest==7.1.2
+SQLAlchemy==1.4.29
+tabulate==0.8.10

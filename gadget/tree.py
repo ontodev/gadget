@@ -248,8 +248,8 @@ def term2rdfa(
     query = sql_text(
         f"""SELECT subject FROM "{statement}"
         WHERE subject IN :term_ids
-          AND predicate = "owl:deprecated"
-          AND LOWER(object) = "true";"""
+          AND predicate = 'owl:deprecated'
+          AND LOWER(object) = 'true';"""
     ).bindparams(bindparam("term_ids", expanding=True))
     obsolete = [res["subject"] for res in conn.execute(query, term_ids=list(term_ids)).fetchall()]
 
