@@ -33,20 +33,20 @@ jobs:
         echo "mod python_module;" >> src/lib.rs
         python3 -m venv .venv
 
-    - name: Build using maturin
+    - name: Build wiring using maturin
       working-directory: ./wiring.py/wiring.rs
       run: |
         source .venv/bin/activate
         pip3 install maturin
-        maturin develop
+        maturin --interpreter ${{ matrix.python-version }} develop
 
-    - name: Successfully run demo
+    - name: Successfully run wiring demo
       working-directory: ./wiring.py
       run: |
         source wiring.rs/.venv/bin/activate
         python3 demo.py
 
-    - name: Install dependencies
+    - name: Install gadget dependencies
       working-directory: .
       run: |
         source wiring.py/wiring.rs/.venv/bin/activate
@@ -62,7 +62,7 @@ jobs:
     #     # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
     #     flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Test with pytest
+    - name: Test gadget with sqlite and pytest
       working-directory: .
       run: |
         source wiring.py/wiring.rs/.venv/bin/activate
