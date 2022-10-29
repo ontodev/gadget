@@ -32,21 +32,20 @@ jobs:
         cd wiring.rs
         echo "mod python_module;" >> src/lib.rs
 
-    - name: Run maturin develop
-      uses: messense/maturin-action@v1
-      with:
-        command: develop
-
-    - name: Successfully run demo
+    - name: Build using maturin and successfully run demo
       run: |
+        python3 -m venv .venv
+        source .venv/bin/activate
+        pip3 install maturin
+        maturin develop
         cd ..
         python3 demo.py
         cd ..
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
-        pip install .
+        pip3 install -r requirements.txt
+        pip3 install .
 
     - name: Lint with flake8
       run: |
