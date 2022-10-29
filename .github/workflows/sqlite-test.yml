@@ -31,13 +31,14 @@ jobs:
         mv Cargo.toml wiring.rs/
         cd wiring.rs
         echo "mod python_module;" >> src/lib.rs
-        python3 -m venv .venv
-        source .venv/bin/activate
 
-    - name: Build using maturin and successfully run demo
+    - name: Run maturin develop
+      uses: messense/maturin-action@v1
+      with:
+        command: develop
+
+    - name: Successfully run demo
       run: |
-        pip install maturin
-        maturin develop
         cd ..
         python3 demo.py
         cd ..
