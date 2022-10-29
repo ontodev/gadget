@@ -1,5 +1,5 @@
 flake8==5.0.4
 hiccupy==1.0.0
-pytest==7.1.2
+pytest==7
 SQLAlchemy==1.4.29
 tabulate==0.8.10
