@@ -1,3 +1,4 @@
+import math
 import os
 import re
 
@@ -154,12 +155,14 @@ def get_child_hierarchy(
     :param statement: name of ontology statement table
     :return dict of parent -> list of children
     """
-    query = f"""SELECT DISTINCT subject, object FROM "{statement}"
-        WHERE object IN :term_ids AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')"""
-    query = sql_text(query).bindparams(bindparam("term_ids", expanding=True))
     descendants = defaultdict(list)
-    if term_ids:
-        results = conn.execute(query, term_ids=term_ids)
+    # Use chunks to get around max SQL variables
+    chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+    for chunk in chunks:
+        query = f"""SELECT DISTINCT subject, object FROM "{statement}"
+            WHERE object IN :ids AND predicate IN ('rdfs:subClassOf', 'rdfs:subPropertyOf')"""
+        query = sql_text(query).bindparams(bindparam("ids", expanding=True))
+        results = conn.execute(query, {"ids": chunk})
         for res in results:
             descendants[res["object"]].append(res["subject"])
     return descendants
@@ -268,14 +271,15 @@ def get_entity_types(
     :param statement: name of ontology statement table
     :return: dict of term_id -> types
     """
-    query = sql_text(
-        f"""SELECT DISTINCT subject, object FROM "{statement}"
-            WHERE subject IN :term_ids AND predicate = 'rdf:type'"""
-    ).bindparams(bindparam("term_ids", expanding=True))
-
     all_types = defaultdict(list)
-    if term_ids:
-        results = conn.execute(query, term_ids=term_ids).fetchall()
+    # Use chunks to get around max SQL variables
+    chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+    for chunk in chunks:
+        query = sql_text(
+            f"""SELECT DISTINCT subject, object FROM "{statement}"
+                WHERE subject IN :ids AND predicate = 'rdf:type'"""
+        ).bindparams(bindparam("ids", expanding=True))
+        results = conn.execute(query, {"ids": chunk})
         for res in results:
             term_id = res["subject"]
             if term_id not in all_types:
@@ -454,7 +458,8 @@ def get_objects(
     results = []
     if term_ids and predicate_ids:
         # Use chunks to get around max SQL variables
-        chunks = [term_ids[i : i + MAX_SQL_VARS] for i in range(0, len(term_ids), MAX_SQL_VARS)]
+        MAX = MAX_SQL_VARS - len(predicate_ids)
+        chunks = [term_ids[i : i + MAX] for i in range(0, len(term_ids), MAX)]
         for i, chunk in enumerate(chunks):
             const_dict["terms"] = chunk
             # print(f"CHUNK {i}: {chunk}\nCONST_DICT: {const_dict}")
